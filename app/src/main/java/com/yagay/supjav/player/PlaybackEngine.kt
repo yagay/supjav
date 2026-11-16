@@ -162,9 +162,9 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
         retryJob?.cancel()
         waitingForConnection = false
         savePosition()
+        currentVideo = null
         player.stop()
         player.clearMediaItems()
-        currentVideo = null
         context.stopService(Intent(context, PlaybackService::class.java))
     }
 
