@@ -2,12 +2,16 @@ package com.yagay.supjav.player
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
-import android.net.Uri
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.yagay.supjav.data.LibraryStore
@@ -15,16 +19,65 @@ import com.yagay.supjav.data.SupjavSource
 import com.yagay.supjav.model.PlaybackSource
 import com.yagay.supjav.model.VideoItem
 import com.yagay.supjav.util.Diagnostics
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class PlaybackEngine(private val context: Context, private val library: LibraryStore) {
     val player: ExoPlayer = ExoPlayer.Builder(context).build()
     var currentVideo: VideoItem? = null
         private set
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val network = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private var networkRegistered = false
+    private var retryJob: Job? = null
+    private var generation = 0L
+    private var retries = 0
+    private var waitingForConnection = false
+    private var lastGoodPosition = 0L
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onCapabilitiesChanged(net: Network, capabilities: NetworkCapabilities) {
+            if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                scope.launch {
+                    if (waitingForConnection) {
+                        waitingForConnection = false
+                        scheduleRetry(immediate = true)
+                    }
+                }
+            }
+        }
+    }
 
     init {
+        runCatching {
+            network.registerDefaultNetworkCallback(networkCallback)
+            networkRegistered = true
+        }.onFailure { Diagnostics.log("NETWORK_LISTENER " + it.javaClass.simpleName) }
+
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                Diagnostics.log("PLAYER_ERROR " + error.errorCodeName + " " + error.message.orEmpty())
+                Diagnostics.log("PLAYER_ERROR " + error.errorCodeName + " " +
+                    error.message.orEmpty().take(140))
+                val status = generateSequence(error as Throwable?) { it.cause }
+                    .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
+                    .firstOrNull()?.responseCode
+                if (PlaybackRecoveryPolicy.mayRetry(error.errorCode, status)) {
+                    lastGoodPosition = player.currentPosition.coerceAtLeast(0L)
+                    scheduleRetry()
+                }
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    retries = 0
+                    waitingForConnection = false
+                    retryJob?.cancel()
+                    retryJob = null
+                }
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 Diagnostics.log("PLAYER_STATE " + playbackState)
@@ -33,7 +86,48 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
         })
     }
 
+    private fun networkValidated(): Boolean = runCatching {
+        val active = network.activeNetwork ?: return@runCatching false
+        network.getNetworkCapabilities(active)
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+    }.getOrDefault(false)
+
+    private fun scheduleRetry(immediate: Boolean = false) {
+        if (currentVideo == null || !player.playWhenReady) return
+        if (!networkValidated()) {
+            waitingForConnection = true
+            Diagnostics.log("PLAYER_WAITING_FOR_NETWORK")
+            return
+        }
+        if (retries >= PlaybackRecoveryPolicy.MAX_RETRIES) {
+            Diagnostics.log("PLAYER_RETRY_EXHAUSTED")
+            return
+        }
+        retries++
+        val attempt = retries
+        val requestGeneration = generation
+        retryJob?.cancel()
+        retryJob = scope.launch {
+            if (!immediate) delay(PlaybackRecoveryPolicy.delayMs(attempt))
+            if (requestGeneration != generation || currentVideo == null ||
+                !player.playWhenReady) return@launch
+            if (!networkValidated()) {
+                waitingForConnection = true
+                return@launch
+            }
+            Diagnostics.log("PLAYER_RETRY attempt=" + attempt)
+            player.prepare()
+            player.seekTo(lastGoodPosition)
+            player.play()
+        }
+    }
+
     fun play(video: VideoItem, source: PlaybackSource, resume: Boolean = true) {
+        generation++
+        retryJob?.cancel()
+        retryJob = null
+        retries = 0
+        waitingForConnection = false
         savePosition()
         val properties = mapOf("User-Agent" to SupjavSource.UA, "Referer" to source.referer)
         val factory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(properties)
@@ -43,12 +137,13 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
         }.build()
         val item = MediaItem.Builder().setUri(source.url).setMimeType(source.mimeType)
             .setMediaId(video.id).setMediaMetadata(metadata).build()
-        val oldPosition = if (resume && currentVideo?.id == video.id) player.currentPosition
+        val resumePosition = if (resume && currentVideo?.id == video.id) player.currentPosition
             else if (resume) library.position(video.id) else 0L
         currentVideo = video
+        lastGoodPosition = resumePosition.coerceAtLeast(0L)
         player.setMediaSource(DefaultMediaSourceFactory(factory).createMediaSource(item))
         player.prepare()
-        if (oldPosition > 0) player.seekTo(oldPosition)
+        if (resumePosition > 0) player.seekTo(resumePosition)
         player.playWhenReady = true
         Diagnostics.log("PLAY id=" + video.id + " mime=" + source.mimeType)
         context.startService(Intent(context, PlaybackService::class.java))
@@ -56,11 +151,31 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
 
     fun savePosition() {
         val video = currentVideo ?: return
-        val position = if (player.duration > 0 && player.currentPosition >= player.duration - 5000) 0L
+        val position = if (player.duration > 0 &&
+            player.currentPosition >= player.duration - 5_000L) 0L
             else player.currentPosition.coerceAtLeast(0L)
         library.saveHistory(video, position)
     }
 
-    fun stop() { savePosition(); player.stop() }
-    fun release() { savePosition(); player.release() }
+    fun stop() {
+        generation++
+        retryJob?.cancel()
+        waitingForConnection = false
+        savePosition()
+        player.stop()
+        player.clearMediaItems()
+        currentVideo = null
+        context.stopService(Intent(context, PlaybackService::class.java))
+    }
+
+    fun release() {
+        generation++
+        retryJob?.cancel()
+        savePosition()
+        if (networkRegistered) runCatching {
+            network.unregisterNetworkCallback(networkCallback)
+        }
+        scope.cancel()
+        player.release()
+    }
 }
