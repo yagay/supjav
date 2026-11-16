@@ -8,7 +8,7 @@ import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 
 class PlaybackResolver(private val source: SupjavSource) {
-    private val mediaPattern = Regex("""(?i)https?:(?:\\/\\/|//)[^"'\\s<>]+?(?:\\.m3u8|\\.mp4|master\\.txt)(?:\\?[^"'\\s<>]*)?""")
+    private val mediaPattern = Regex("""(?i)https?://[^"'\s<>]+?(?:\.m3u8|\.mp4|master\.txt)(?:\?[^"'\s<>]*)?""")
 
     suspend fun resolve(server: VideoServer): ResolveResult = withContext(Dispatchers.IO) {
         try {

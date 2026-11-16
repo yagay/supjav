@@ -89,6 +89,7 @@ private fun SupjavRoot(
     var selected by remember { mutableStateOf<VideoItem?>(null) }
     var playerOpen by remember { mutableStateOf(false) }
     var kind by remember { mutableStateOf(FeedKind.LATEST) }
+    var feedValue by remember { mutableStateOf("") }
     val video = selected
     val back: () -> Unit = {
         if (playerOpen) { app.playerEngine.savePosition(); playerOpen = false }
@@ -116,7 +117,7 @@ private fun SupjavRoot(
                         IconButton(onClick = enterPip) { Icon(Icons.Filled.PictureInPictureAlt, "画中画") }
                     } else if (video == null && tab == 0) {
                         IconButton(onClick = { tab = 1 }) { Icon(Icons.Filled.Search, "搜索") }
-                        IconButton(onClick = { kind = FeedKind.LATEST }) {
+                        IconButton(onClick = { kind = FeedKind.LATEST; feedValue = "" }) {
                             Icon(Icons.Filled.Refresh, "首页")
                         }
                     }
@@ -142,6 +143,7 @@ private fun SupjavRoot(
                     onPlay = { playerOpen = true },
                     onFilter = { filter, term ->
                         kind = filter
+                        feedValue = term
                         selected = null
                         tab = 0
                     })
@@ -149,11 +151,11 @@ private fun SupjavRoot(
                     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(FeedKind.LATEST, FeedKind.DAY, FeedKind.WEEK, FeedKind.MONTH).forEach { choice ->
-                            FilterChip(selected = kind == choice, onClick = { kind = choice },
+                            FilterChip(selected = kind == choice, onClick = { kind = choice; feedValue = "" },
                                 label = { Text(choice.title) })
                         }
                     }
-                    FeedScreen(app, kind, "", onVideo = { selected = it })
+                    FeedScreen(app, kind, feedValue, onVideo = { selected = it })
                 }
                 tab == 1 -> DiscoverScreen(app, onVideo = { selected = it })
                 tab == 2 -> LibraryScreen(app, onVideo = { selected = it })

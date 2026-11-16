@@ -59,14 +59,14 @@ class SupjavSource {
         }
     }
 
-    fun isPublicHttps(url: String): Boolean = try {
+    fun isPublicHttps(url: String): Boolean { return try {
         val uri = URI(url)
         val host = uri.host?.lowercase() ?: return false
         val privateHost = host == "localhost" || host == "::1" || host == "127.0.0.1" ||
             host.startsWith("10.") || host.startsWith("192.168.") ||
             Regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.").containsMatchIn(host)
         uri.scheme == "https" && !privateHost && uri.userInfo == null
-    } catch (_: Exception) { false }
+    } catch (_: Exception) { false } }
 
     suspend fun list(kind: FeedKind, value: String = "", page: Int = 1): List<VideoItem> =
         withContext(Dispatchers.IO) {

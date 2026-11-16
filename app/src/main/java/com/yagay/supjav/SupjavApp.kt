@@ -12,9 +12,4 @@ class SupjavApp : Application() {
     val library by lazy { LibraryStore(this) }
     val playerEngine by lazy { PlaybackEngine(this, library) }
     val preferences by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
-    override fun onTerminate() {
-        if (playerEngineInitialized()) playerEngine.release()
-        super.onTerminate()
-    }
-    private fun playerEngineInitialized(): Boolean = false // Android process lifecycle owns the engine
 }
