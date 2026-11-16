@@ -3,6 +3,9 @@ package com.yagay.supjav.player
 import android.content.Context
 import android.content.Intent
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import android.net.Uri
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -18,13 +21,28 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
     var currentVideo: VideoItem? = null
         private set
 
+    init {
+        player.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                Diagnostics.log("PLAYER_ERROR " + error.errorCodeName + " " + error.message.orEmpty())
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                Diagnostics.log("PLAYER_STATE " + playbackState)
+                if (playbackState == Player.STATE_ENDED) savePosition()
+            }
+        })
+    }
+
     fun play(video: VideoItem, source: PlaybackSource, resume: Boolean = true) {
         savePosition()
         val properties = mapOf("User-Agent" to SupjavSource.UA, "Referer" to source.referer)
         val factory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(properties)
             .setConnectTimeoutMs(15000).setReadTimeoutMs(25000)
+        val metadata = MediaMetadata.Builder().setTitle(video.title).apply {
+            if (video.coverUrl.startsWith("https://")) setArtworkUri(Uri.parse(video.coverUrl))
+        }.build()
         val item = MediaItem.Builder().setUri(source.url).setMimeType(source.mimeType)
-            .setMediaId(video.id).build()
+            .setMediaId(video.id).setMediaMetadata(metadata).build()
         val oldPosition = if (resume && currentVideo?.id == video.id) player.currentPosition
             else if (resume) library.position(video.id) else 0L
         currentVideo = video

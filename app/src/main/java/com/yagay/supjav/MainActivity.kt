@@ -86,8 +86,8 @@ private fun SupjavRoot(
     }
 
     var tab by remember { mutableIntStateOf(0) }
-    var selected by remember { mutableStateOf<VideoItem?>(null) }
-    var playerOpen by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<VideoItem?>(app.playerEngine.currentVideo) }
+    var playerOpen by remember { mutableStateOf(app.playerEngine.currentVideo != null && app.playerEngine.player.isPlaying) }
     var kind by remember { mutableStateOf(FeedKind.LATEST) }
     var feedValue by remember { mutableStateOf("") }
     val video = selected
