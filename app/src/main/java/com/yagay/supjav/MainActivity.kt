@@ -26,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
@@ -108,6 +109,7 @@ private fun Root(
         return
     }
 
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var feedKind by remember { mutableStateOf(FeedKind.LATEST) }
     var feedValue by remember { mutableStateOf("") }
@@ -122,7 +124,11 @@ private fun Root(
 
     val back: () -> Unit = {
         when {
-            showPlayer -> { app.playerEngine.savePosition(); showPlayer = false }
+            showPlayer -> {
+                app.playerEngine.savePosition()
+                (context as? ComponentActivity)?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                showPlayer = false
+            }
             showDetail -> showDetail = false
             tab != 0 -> tab = 0
         }
@@ -218,13 +224,15 @@ private fun Root(
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column {
-                    SupjavHeader("正在播放", onBack = back, actions = {
-                        if (app.preferences.getBoolean("manual_pip", true)) {
-                            IconButton(onClick = onPip) {
-                                Icon(Icons.Outlined.PictureInPictureAlt, "画中画")
+                    if (!landscape) {
+                        SupjavHeader("正在播放", onBack = back, actions = {
+                            if (app.preferences.getBoolean("manual_pip", true)) {
+                                IconButton(onClick = onPip) {
+                                    Icon(Icons.Outlined.PictureInPictureAlt, "画中画")
+                                }
                             }
-                        }
-                    })
+                        })
+                    }
                     PlayerScreen(app, false, onPip, { showPlayer = false })
                 }
             }
