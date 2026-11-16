@@ -219,8 +219,10 @@ private fun Root(
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column {
                     SupjavHeader("正在播放", onBack = back, actions = {
-                        IconButton(onClick = onPip) {
-                            Icon(Icons.Outlined.PictureInPictureAlt, "画中画")
+                        if (app.preferences.getBoolean("manual_pip", true)) {
+                            IconButton(onClick = onPip) {
+                                Icon(Icons.Outlined.PictureInPictureAlt, "画中画")
+                            }
                         }
                     })
                     PlayerScreen(app, false, onPip, { showPlayer = false })

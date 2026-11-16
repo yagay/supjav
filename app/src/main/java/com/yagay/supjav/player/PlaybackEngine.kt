@@ -6,6 +6,9 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -29,7 +32,7 @@ import kotlinx.coroutines.launch
 
 class PlaybackEngine(private val context: Context, private val library: LibraryStore) {
     val player: ExoPlayer = ExoPlayer.Builder(context).build()
-    var currentVideo: VideoItem? = null
+    var currentVideo by mutableStateOf<VideoItem?>(null)
         private set
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val network = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager

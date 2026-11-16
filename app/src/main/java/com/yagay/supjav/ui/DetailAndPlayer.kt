@@ -276,11 +276,14 @@ fun PlayerScreen(
     var speed by remember { mutableFloatStateOf(player.playbackParameters.speed) }
     var expandedSettings by remember { mutableStateOf(false) }
     var fill by remember { mutableStateOf(prefs.getBoolean("fill_video", false)) }
-    var seekFraction by remember { mutableFloatStateOf(0f) }
+    var draggingSeek by remember { mutableStateOf(false) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(value: Boolean) { isPlaying = value }
+            override fun onIsPlayingChanged(value: Boolean) {
+                isPlaying = value
+                if (value) currentError = null
+            }
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
                 duration = player.duration.coerceAtLeast(0)
@@ -294,7 +297,7 @@ fun PlayerScreen(
     }
     LaunchedEffect(player, pip) {
         while (true) {
-            position = player.currentPosition.coerceAtLeast(0)
+            if (!draggingSeek) position = player.currentPosition.coerceAtLeast(0)
             duration = player.duration.coerceAtLeast(0)
             delay(350)
         }
@@ -319,6 +322,7 @@ fun PlayerScreen(
                         this.player = player
                         useController = false
                         keepScreenOn = true
+                        setKeepContentOnPlayerReset(true)
                         resizeMode = if (fill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                             else AspectRatioFrameLayout.RESIZE_MODE_FIT
                     }
@@ -353,11 +357,13 @@ fun PlayerScreen(
                         else 0f,
                     onValueChange = { fraction ->
                         if (duration > 0L) {
+                            draggingSeek = true
                             position = (duration * fraction).toLong()
                         }
                     },
                     onValueChangeFinished = {
                         if (duration > 0L) player.seekTo(position)
+                        draggingSeek = false
                     },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                     enabled = duration > 0L

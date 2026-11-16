@@ -11,7 +11,7 @@ object PlaybackRecoveryPolicy {
     const val MAX_RETRIES = 4
 
     fun mayRetry(errorCode: Int, httpStatus: Int? = null): Boolean =
-        errorCode in transportErrors || (httpStatus != null && httpStatus in serverStatus)
+        if (httpStatus != null) httpStatus in serverStatus else errorCode in transportErrors
 
     fun delayMs(attempt: Int): Long = when (attempt) {
         1 -> 2_500L
