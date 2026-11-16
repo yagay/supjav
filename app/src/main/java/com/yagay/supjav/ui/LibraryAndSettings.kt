@@ -1,14 +1,20 @@
 package com.yagay.supjav.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.yagay.supjav.SupjavApp
 import com.yagay.supjav.model.VideoItem
@@ -18,29 +24,39 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun LibraryScreen(app: SupjavApp, onVideo: (VideoItem) -> Unit) {
-    var favorites by remember { mutableStateOf(true) }
+fun LibraryScreen(
+    app: SupjavApp,
+    onVideo: (VideoItem) -> Unit,
+    initialFavorites: Boolean = true,
+    showTabs: Boolean = true
+) {
+    var favorites by remember(initialFavorites) { mutableStateOf(initialFavorites) }
     var revision by remember { mutableIntStateOf(0) }
     var list by remember { mutableStateOf(emptyList<VideoItem>()) }
     val scope = rememberCoroutineScope()
+    val grid = rememberLazyGridState()
     LaunchedEffect(favorites, revision) {
         list = withContext(Dispatchers.IO) { app.library.list(favorites) }
     }
     Column {
-        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = favorites, onClick = { favorites = true },
-                label = { Text("收藏") })
-            FilterChip(selected = !favorites, onClick = { favorites = false },
-                label = { Text("播放历史") })
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { revision++ }) { Text("刷新") }
+        if (showTabs) {
+            Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = favorites, onClick = { favorites = true },
+                    label = { Text("收藏") })
+                FilterChip(selected = !favorites, onClick = { favorites = false },
+                    label = { Text("历史") })
+            }
         }
         if (list.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(if (favorites) "暂无收藏" else "暂无播放记录")
-            }
+            SupjavEmptyState(
+                if (favorites) "暂无收藏" else "暂无播放历史",
+                modifier = Modifier.fillMaxSize()
+            )
         } else {
-            LazyVerticalGrid(columns = GridCells.Fixed(2),
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                state = grid,
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -48,13 +64,18 @@ fun LibraryScreen(app: SupjavApp, onVideo: (VideoItem) -> Unit) {
                 items(list, key = { it.id }) { video ->
                     Column {
                         VideoTile(video, { onVideo(video) })
-                        TextButton(onClick = {
-                            scope.launch(Dispatchers.IO) {
-                                if (favorites) app.library.toggleFavorite(video)
-                                else app.library.deleteHistory(video.id)
-                                withContext(Dispatchers.Main) { revision++ }
+                        TextButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        if (favorites) app.library.toggleFavorite(video)
+                                        else app.library.deleteHistory(video.id)
+                                    }
+                                    revision++
+                                }
                             }
-                        }) { Text("移除") }
+                        ) { Text("移除") }
                     }
                 }
             }
@@ -66,46 +87,89 @@ fun LibraryScreen(app: SupjavApp, onVideo: (VideoItem) -> Unit) {
 fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
     val prefs = app.preferences
     var background by remember { mutableStateOf(prefs.getBoolean("background", true)) }
+    var autoPip by remember { mutableStateOf(prefs.getBoolean("auto_pip", false)) }
+    var showPip by remember { mutableStateOf(prefs.getBoolean("manual_pip", true)) }
     var confirmClear by remember { mutableStateOf(false) }
+    var logError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("播放器设置", style = MaterialTheme.typography.titleMedium)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("允许后台播放", Modifier.weight(1f))
-            Switch(checked = background, onCheckedChange = {
-                background = it
-                prefs.edit().putBoolean("background", it).apply()
-            })
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        SupjavSectionTitle("播放与窗口")
+        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
+            color = MaterialTheme.colorScheme.surface) {
+            Column {
+                SupjavSettingToggle("后台播放",
+                    "切换应用或熄屏时继续播放支持的媒体", background) {
+                    background = it
+                    prefs.edit().putBoolean("background", it).apply()
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SupjavSettingToggle("离开 App 自动画中画",
+                    "仅在视频正在播放时尝试进入系统画中画", autoPip) {
+                    autoPip = it
+                    prefs.edit().putBoolean("auto_pip", it).apply()
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SupjavSettingToggle("显示手动画中画入口",
+                    "控制播放器右上角的小窗图标", showPip) {
+                    showPip = it
+                    prefs.edit().putBoolean("manual_pip", it).apply()
+                }
+            }
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("深色模式", Modifier.weight(1f))
-            Switch(checked = dark, onCheckedChange = onDark)
+        SupjavSectionTitle("外观")
+        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
+            color = MaterialTheme.colorScheme.surface) {
+            SupjavSettingToggle("深色模式", "全应用统一主题", dark, onDark)
         }
-        HorizontalDivider()
-        Text("数据与诊断", style = MaterialTheme.typography.titleMedium)
-        OutlinedButton(onClick = {
-            try { Diagnostics.share(context) }
-            catch (e: Exception) { Diagnostics.log("EXPORT_FAILED " + e.message.orEmpty()) }
-        }, modifier = Modifier.fillMaxWidth()) { Text("导出诊断 ZIP") }
-        OutlinedButton(onClick = { confirmClear = true },
-            modifier = Modifier.fillMaxWidth()) { Text("清空播放历史") }
-        HorizontalDivider()
-        Text("关于", style = MaterialTheme.typography.titleMedium)
-        Text("Supjav Native 0.1.0 · Kotlin / Compose / Media3",
-            style = MaterialTheme.typography.bodyMedium)
-        Text("原生解析只支持可正常访问的公开播放源。遇到网站验证、DRM 或未支持的 JavaScript 播放器时会显示失败原因。",
-            style = MaterialTheme.typography.bodySmall)
+        SupjavSectionTitle("数据与诊断")
+        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
+            color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        logError = null
+                        runCatching { Diagnostics.share(context) }
+                            .onFailure { logError = it.message ?: "导出日志失败" }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Outlined.BugReport, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("导出诊断 ZIP")
+                }
+                OutlinedButton(
+                    onClick = { confirmClear = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Outlined.DeleteOutline, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("清空播放历史")
+                }
+                if (logError != null) Text(logError.orEmpty(), color = MaterialTheme.colorScheme.error)
+            }
+        }
+        Text("Supjav Native · Android / Compose / Media3",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("第三方播放需要验证或不支持原生读取时，会明确显示失败原因。不会绕过网站访问控制。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false },
-        title = { Text("清空历史？") },
-        text = { Text("此操作不会删除收藏。") },
+    if (confirmClear) AlertDialog(
+        onDismissRequest = { confirmClear = false },
+        title = { Text("清空所有播放历史？") },
+        text = { Text("收藏不会被清空。") },
         confirmButton = {
             TextButton(onClick = {
                 confirmClear = false
                 scope.launch(Dispatchers.IO) { app.library.clearHistory() }
             }) { Text("清空") }
         },
-        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } })
+        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
+    )
 }
