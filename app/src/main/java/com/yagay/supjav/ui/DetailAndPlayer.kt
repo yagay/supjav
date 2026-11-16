@@ -1,6 +1,11 @@
 package com.yagay.supjav.ui
 
 import android.content.Intent
+import android.content.res.Configuration
+import android.app.Activity
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.horizontalScroll
 import android.content.pm.ActivityInfo
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
@@ -267,6 +272,7 @@ fun PlayerScreen(
     val player = engine.player
     val video = engine.currentVideo
     val context = LocalContext.current
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val prefs = app.preferences
     var currentError by remember { mutableStateOf<String?>(null) }
     var isPlaying by remember { mutableStateOf(player.isPlaying) }
@@ -277,6 +283,9 @@ fun PlayerScreen(
     var expandedSettings by remember { mutableStateOf(false) }
     var fill by remember { mutableStateOf(prefs.getBoolean("fill_video", false)) }
     var draggingSeek by remember { mutableStateOf(false) }
+    BackHandler(enabled = landscape && !pip) {
+        (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -308,7 +317,7 @@ fun PlayerScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = if (pip) Modifier.fillMaxSize() else
+            modifier = if (pip || landscape) Modifier.fillMaxSize() else
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
         ) {
             AndroidView(
@@ -320,7 +329,7 @@ fun PlayerScreen(
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                         this.player = player
-                        useController = false
+                        useController = landscape && !pip
                         keepScreenOn = true
                         setKeepContentOnPlayerReset(true)
                         resizeMode = if (fill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -329,10 +338,17 @@ fun PlayerScreen(
                 },
                 update = {
                     it.player = player
+                    it.useController = landscape && !pip
                     it.resizeMode = if (fill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         else AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             )
+            if (landscape && !pip) {
+                IconButton(
+                    onClick = { (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT },
+                    modifier = Modifier.align(Alignment.TopEnd)
+                ) { Icon(Icons.Outlined.FullscreenExit, "退出横屏", tint = Color.White) }
+            }
             if (!pip && isBuffering) {
                 CircularProgressIndicator(
                     Modifier.align(Alignment.Center).size(26.dp),
@@ -340,7 +356,7 @@ fun PlayerScreen(
                 )
             }
         }
-        if (!pip) {
+        if (!pip && !landscape) {
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -365,7 +381,7 @@ fun PlayerScreen(
                         if (duration > 0L) player.seekTo(position)
                         draggingSeek = false
                     },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                     enabled = duration > 0L
                 )
                 Row(
@@ -390,6 +406,10 @@ fun PlayerScreen(
                     IconButton(onClick = { expandedSettings = true }) {
                         Icon(Icons.Outlined.MoreVert, "播放设置")
                     }
+                    IconButton(onClick = {
+                        (context as? Activity)?.requestedOrientation =
+                            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    }) { Icon(Icons.Outlined.Fullscreen, "横屏") }
                 }
                 if (currentError != null) {
                     Surface(
@@ -429,7 +449,7 @@ fun PlayerScreen(
         SupjavModalSheet(title = "画面与播放设置", onDismiss = { expandedSettings = false }) {
             SupjavSectionTitle("播放速度")
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 listOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEach { value ->
