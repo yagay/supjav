@@ -32,7 +32,7 @@ object SupjavMetrics {
     val cardRadius = 16.dp
     val controlRadius = 10.dp
     val headerHeight = 56.dp
-    val navigationHeight = 52.dp
+    val navigationHeight = 48.dp
     val iconTarget = 40.dp
     val sectionGap = 12.dp
 }
@@ -73,7 +73,7 @@ fun SupjavHeader(
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(SupjavMetrics.headerHeight)
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(SupjavMetrics.headerHeight)
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -104,8 +104,8 @@ fun SupjavPrimaryNavigation(selected: Int, onSelect: (Int) -> Unit) {
         shadowElevation = 5.dp
     ) {
         Row(
-            Modifier.fillMaxWidth().height(SupjavMetrics.navigationHeight)
-                .navigationBarsPadding().padding(horizontal = 28.dp),
+            Modifier.fillMaxWidth().navigationBarsPadding()
+                .height(SupjavMetrics.navigationHeight).padding(horizontal = 28.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {

@@ -75,46 +75,63 @@ fun FeedScreen(
     app: SupjavApp, kind: FeedKind, value: String,
     onVideo: (VideoItem) -> Unit, refreshKey: Int = 0
 ) {
-    val data = remember(kind, value, refreshKey) { mutableStateListOf<VideoItem>() }
-    var page by remember(kind, value, refreshKey) { mutableIntStateOf(0) }
-    var loading by remember(kind, value, refreshKey) { mutableStateOf(false) }
-    var endReached by remember(kind, value, refreshKey) { mutableStateOf(false) }
-    var error by remember(kind, value, refreshKey) { mutableStateOf<String?>(null) }
+    // Shared page state keeps list data and scroll position when switching tabs.
+    val pageState = remember(app, kind, value, refreshKey) {
+        app.feedCache.getOrCreate(kind, value, refreshKey)
+    }
+    val data = pageState.items
     val scope = rememberCoroutineScope()
-    val grid = androidx.compose.runtime.key(kind, value, refreshKey) { rememberLazyGridState() }
+    val grid = rememberLazyGridState(
+        initialFirstVisibleItemIndex = pageState.firstVisibleIndex,
+        initialFirstVisibleItemScrollOffset = pageState.firstVisibleOffset
+    )
+    val loading = pageState.loading
+    val endReached = pageState.endReached
+    val error = pageState.error
 
     suspend fun loadMore() {
-        if (loading || endReached) return
-        loading = true
-        error = null
+        if (pageState.loading || pageState.endReached) return
+        pageState.loading = true
+        pageState.error = null
         try {
-            val next = app.source.list(kind, value, page + 1)
+            val next = app.source.list(kind, value, pageState.page + 1)
             val unique = next.filterNot { candidate -> data.any { it.id == candidate.id } }
             data.addAll(unique)
-            page++
-            if (next.isEmpty() || unique.isEmpty()) endReached = true
+            pageState.page++
+            pageState.loaded = true
+            if (next.isEmpty() || unique.isEmpty()) pageState.endReached = true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            error = e.message?.take(160) ?: "网络或解析失败"
+            pageState.error = e.message?.take(160) ?: "网络或解析失败"
         } finally {
-            loading = false
+            pageState.loading = false
         }
     }
 
-    LaunchedEffect(kind, value, refreshKey) { loadMore() }
+    LaunchedEffect(pageState) {
+        if (!pageState.loaded && pageState.error == null) loadMore()
+    }
 
+    DisposableEffect(grid, pageState) {
+        onDispose {
+            pageState.firstVisibleIndex = grid.firstVisibleItemIndex
+            pageState.firstVisibleOffset = grid.firstVisibleItemScrollOffset
+        }
+    }
     val lastVisible by remember(grid) {
         derivedStateOf { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
     }
-    LaunchedEffect(lastVisible, loading, endReached, error) {
+    LaunchedEffect(lastVisible, pageState.loading, pageState.endReached, pageState.error) {
         if (data.isNotEmpty() && lastVisible >= data.size - 5 &&
-            !loading && !endReached && error == null) loadMore()
+            !pageState.loading && !pageState.endReached && pageState.error == null) loadMore()
     }
     Column(Modifier.fillMaxSize()) {
-        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (data.isEmpty() && !loading) {
+        if (pageState.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (data.isEmpty() && !pageState.loading) {
             SupjavEmptyState(
-                error ?: "当前列表暂无内容",
-                onRetry = if (error != null) ({ scope.launch { loadMore() } }) else null,
+                pageState.error ?: "当前列表暂无内容",
+                onRetry = if (pageState.error != null) ({ scope.launch { loadMore() } }) else null,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
@@ -129,7 +146,7 @@ fun FeedScreen(
                 items(data, key = { it.id }) { video ->
                     VideoTile(video, { onVideo(video) })
                 }
-                if (loading || error != null || !endReached) {
+                if (pageState.loading || pageState.error != null || !pageState.endReached) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Row(
                             Modifier.fillMaxWidth().padding(6.dp),
@@ -137,8 +154,8 @@ fun FeedScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             when {
-                                loading -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                                error != null -> TextButton(onClick = { scope.launch { loadMore() } }) {
+                                pageState.loading -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                                pageState.error != null -> TextButton(onClick = { scope.launch { loadMore() } }) {
                                     Text("加载失败，点击重试")
                                 }
                                 else -> TextButton(onClick = { scope.launch { loadMore() } }) {
