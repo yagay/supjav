@@ -21,7 +21,12 @@ jobs:
           if [ -z "$SDKMGR" ]; then
             SDKMGR="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -1)"
           fi
-          "$SDKMGR" --install "platforms;android-37" "build-tools;36.0.0" "platform-tools"
+          "$SDKMGR" --install "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
+      - name: SDK 37 legacy path compatibility
+        run: |
+          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"
+          fi
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.4.1'
