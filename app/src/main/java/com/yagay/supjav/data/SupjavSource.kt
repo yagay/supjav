@@ -26,7 +26,15 @@ class SupjavSource {
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
 
-    private fun pageUrl(kind: FeedKind, value: String, page: Int): String {
+    internal fun pageUrl(kind: FeedKind, value: String, page: Int): String {
+        require(page >= 1) { "Invalid page" }
+        if (kind in setOf(FeedKind.CATEGORY, FeedKind.ACTOR, FeedKind.MAKER, FeedKind.TAG) &&
+            value.startsWith("/")) {
+            val path = value.substringBefore('?').trimEnd('/')
+            require(Regex("^/(?:[A-Za-z]{2}/)?(?:category|maker|cast|tag|genre)/[A-Za-z0-9_%/-]+$").matches(path) &&
+                !path.contains("..") && !path.contains("//")) { "Invalid category path" }
+            return BASE + path + "/" + if (page == 1) "" else "page/" + page + "/"
+        }
         val prefix = if (page <= 1) "/" else "/page/" + page + "/"
         return when (kind) {
             FeedKind.LATEST -> BASE + prefix
@@ -38,8 +46,8 @@ class SupjavSource {
             else -> {
                 val path = when(kind) {
                     FeedKind.CATEGORY -> "category"
-                    FeedKind.ACTOR -> "category/cast"
-                    FeedKind.MAKER -> "category/maker"
+                    FeedKind.ACTOR -> "cast"
+                    FeedKind.MAKER -> "maker"
                     FeedKind.TAG -> "tag"
                     else -> "category"
                 }
@@ -137,39 +145,63 @@ class SupjavSource {
     }
 
 
-    data class BrowseOption(val kind: FeedKind, val value: String, val label: String)
+    data class BrowseOption(
+        val kind: FeedKind,
+        val value: String,
+        val label: String,
+        val path: String = value
+    )
 
-    /** Menu items are fetched from the live site, never hardcoded fake categories. */
+    /** No fixed hardcoded category names: read only actual same-site links. */
     suspend fun browseOptions(): List<BrowseOption> = withContext(Dispatchers.IO) {
         parseBrowseOptions(fetch(BASE + "/"))
     }
 
-    fun parseBrowseOptions(html: String): List<BrowseOption> {
-        val doc = Jsoup.parse(html, BASE)
-        return doc.select("nav a[href], .menu a[href], .category-list a[href], .categories a[href]")
-            .mapNotNull { element ->
-                val uri = runCatching { URI(element.absUrl("href")) }.getOrNull()
-                    ?: return@mapNotNull null
-                if (uri.host != "supjav.com" && uri.host != "www.supjav.com") return@mapNotNull null
-                val path = uri.path.orEmpty().trim('/')
-                val info = when {
-                    path.startsWith("category/cast/") ->
-                        FeedKind.ACTOR to path.removePrefix("category/cast/")
-                    path.startsWith("category/maker/") ->
-                        FeedKind.MAKER to path.removePrefix("category/maker/")
-                    path.startsWith("category/") ->
-                        FeedKind.CATEGORY to path.removePrefix("category/")
-                    path.startsWith("tag/") -> FeedKind.TAG to path.removePrefix("tag/")
-                    else -> return@mapNotNull null
+    fun parseBrowseOptions(html: String, base: String = BASE): List<BrowseOption> {
+        val doc = Jsoup.parse(html, base)
+        val selector = listOf(
+            "nav a[href]", "header a[href]", ".menu a[href]", ".categories a[href]",
+            ".category-list a[href]", ".sidebar a[href]",
+            "a[href*='/category/']", "a[href*='/tag/']",
+            "a[href*='/maker/']", "a[href*='/cast/']"
+        ).joinToString(", ")
+        return doc.select(selector).mapNotNull { element ->
+            val uri = runCatching { URI(element.absUrl("href")) }.getOrNull()
+                ?: return@mapNotNull null
+            if (uri.scheme != "https" ||
+                uri.host !in setOf("supjav.com", "www.supjav.com")) return@mapNotNull null
+            val original = uri.rawPath?.trimEnd('/')?.takeIf { it.isNotEmpty() }
+                ?: return@mapNotNull null
+            val segments = original.trim('/').split('/').filter { it.isNotBlank() }
+            val off = if (segments.firstOrNull() in setOf("zh", "en", "ja")) 1 else 0
+            val root = segments.getOrNull(off)?.lowercase()
+            val type: FeedKind
+            val valueIndex: Int
+            when {
+                root == "category" && segments.getOrNull(off + 1) == "cast" -> {
+                    type = FeedKind.ACTOR; valueIndex = off + 2
                 }
-                val raw = info.second.trim('/').substringBefore('/')
-                if (raw.isBlank() || raw == "page") return@mapNotNull null
-                val label = element.text().trim().take(36).ifBlank {
-                    runCatching { URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+                root == "category" && segments.getOrNull(off + 1) == "maker" -> {
+                    type = FeedKind.MAKER; valueIndex = off + 2
                 }
-                BrowseOption(info.first, raw, label)
-            }.distinctBy { it.kind to it.value }.take(80)
+                root == "category" || root == "genre" -> {
+                    type = FeedKind.CATEGORY; valueIndex = off + 1
+                }
+                root == "cast" -> { type = FeedKind.ACTOR; valueIndex = off + 1 }
+                root == "maker" -> { type = FeedKind.MAKER; valueIndex = off + 1 }
+                root == "tag" -> { type = FeedKind.TAG; valueIndex = off + 1 }
+                else -> return@mapNotNull null
+            }
+            if (segments.size != valueIndex + 1) return@mapNotNull null
+            val slug = segments[valueIndex]
+            if (slug == "page" || slug == "." || slug == "..") return@mapNotNull null
+            val label = element.text().trim().take(45).ifBlank {
+                runCatching { URLDecoder.decode(slug, "UTF-8") }.getOrDefault(slug)
+            }
+            BrowseOption(type, slug, label, original)
+        }.distinctBy { it.path }.take(300)
     }
+
     fun resolveUrl(base: String, raw: String): String = try {
         if (raw.isBlank() || raw.startsWith("data:")) "" else URI(base).resolve(raw.trim()).toString()
     } catch (_: Exception) { "" }
