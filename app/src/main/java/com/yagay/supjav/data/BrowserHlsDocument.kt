@@ -55,6 +55,14 @@ internal object BrowserHlsDocument {
             #hint{position:absolute;top:21%;left:10%;right:10%;z-index:4;text-align:center;pointer-events:none;opacity:0;transition:opacity .2s ease}
             #hint span{display:inline-block;max-width:100%;background:rgba(0,0,0,.7);padding:10px 14px;border-radius:14px;font-size:13px}
             #hint.show{opacity:1}
+            /* Feedback stays small and out of the middle of the picture. */
+            #gestureFeedback{position:absolute;z-index:5;left:50%;top:46%;transform:translate(-50%,-50%);pointer-events:none;opacity:0;transition:opacity .14s ease;border-radius:18px;background:rgba(0,0,0,.27);padding:6px 10px;font-size:14px;font-weight:650;text-shadow:0 1px 2px rgba(0,0,0,.65);white-space:nowrap}
+            #gestureFeedback.show{opacity:1}
+            #gestureFeedback.left{left:16%}
+            #gestureFeedback.right{left:84%}
+            #gestureFeedback.boost{top:24%;font-size:13px;padding:5px 9px}
+            #playFlash{position:absolute;z-index:5;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;opacity:0;transition:opacity .16s ease;display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,.23);font-size:24px;color:rgba(255,255,255,.92)}
+            #playFlash.show{opacity:1}
             #spinner{position:absolute;top:39%;left:50%;z-index:1;transform:translateX(-50%);border:3px solid #777;border-top-color:#fff;border-radius:50%;width:31px;height:31px;animation:spin .7s linear infinite}
             #spinner.hide{display:none}
             @keyframes spin{to{transform:translateX(-50%) rotate(360deg)}}
@@ -99,6 +107,8 @@ internal object BrowserHlsDocument {
                 </div>
               </div>
               <div id="hint" role="status"><span id="hintText"></span></div>
+              <div id="gestureFeedback" aria-hidden="true"></div>
+              <div id="playFlash" aria-hidden="true"></div>
             </main>
             <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js"></script>
             <script>
@@ -116,6 +126,9 @@ internal object BrowserHlsDocument {
               var spinner = document.getElementById('spinner');
               var hint = document.getElementById('hint');
               var hintText = document.getElementById('hintText');
+              var gestureFeedback = document.getElementById('gestureFeedback');
+              var playFlash = document.getElementById('playFlash');
+              var gestureFeedbackTimer = null, playFlashTimer = null;
               var speed = document.getElementById('speed');
               var hideTimer = null, hintTimer = null, scrubbing = false;
               var speedList = [0.75,1,1.25,1.5,2], speedIndex = 1;
@@ -152,6 +165,24 @@ internal object BrowserHlsDocument {
                 clearTimeout(hintTimer);
                 hintTimer = setTimeout(function(){hint.classList.remove('show');},2100);
               }
+              function subtleFeedback(label,side,hold){
+                clearTimeout(gestureFeedbackTimer);
+                gestureFeedback.textContent=label;
+                gestureFeedback.className='show'+(side==='left'?' left':side==='right'?' right':'')+(hold?' boost':'');
+                if(!hold)gestureFeedbackTimer=setTimeout(function(){
+                  gestureFeedback.className='';
+                },620);
+              }
+              function clearSubtleFeedback(){
+                clearTimeout(gestureFeedbackTimer);
+                gestureFeedback.className='';
+              }
+              function playbackFlash(willPlay){
+                clearTimeout(playFlashTimer);
+                playFlash.textContent=willPlay?'▶':'❚❚';
+                playFlash.classList.add('show');
+                playFlashTimer=setTimeout(function(){playFlash.classList.remove('show');},480);
+              }
               function chromeVisible(show){
                 chrome.classList.toggle('hidden', !show);
                 clearTimeout(hideTimer);
@@ -178,17 +209,20 @@ internal object BrowserHlsDocument {
                 paintProgress();
               }
               function toggle(){
-                if(video.paused){video.play().catch(function(){message('点击播放按钮重试');state('tap-play');});}
+                var willPlay=video.paused;
+                playbackFlash(willPlay);
+                if(willPlay){video.play().catch(function(){message('点击播放按钮重试');state('tap-play');});}
                 else video.pause();
-                chromeVisible(true);
+                // A tap should not splash the entire control bar over the video.
+                if(!willPlay)chromeVisible(true);
               }
               function skip(seconds){
                 if(!isFinite(video.duration) || video.duration<=0){message('暂时无法快进');return;}
                 var position = Math.max(0, Math.min(video.duration - 0.1, video.currentTime+seconds));
                 video.currentTime=position;
                 tick();
-                message((seconds>0?'+':'')+seconds+' 秒');
-                chromeVisible(true);
+                subtleFeedback((seconds>0?'+':'−')+Math.abs(seconds)+'s',
+                  seconds>0?'right':'left',false);
               }
               function rotate(){ state('rotate');chromeVisible(true); }
               document.getElementById('play').addEventListener('click',toggle);
@@ -233,7 +267,7 @@ internal object BrowserHlsDocument {
                 if(previousHoldRate!==null) {
                   video.playbackRate=previousHoldRate;
                   previousHoldRate=null;
-                  message('已恢复 '+video.playbackRate+'×');
+                  clearSubtleFeedback();
                 }
               }
               function clearGesture(){
@@ -269,8 +303,7 @@ internal object BrowserHlsDocument {
                     previousHoldRate=video.playbackRate;
                     video.playbackRate=2;
                     if(video.paused)video.play().catch(function(){});
-                    message('2× 倍速播放 · 松手恢复');
-                    chromeVisible(true);
+                    subtleFeedback('2×',side,true);
                   },420);
                 }
               });
@@ -299,8 +332,7 @@ internal object BrowserHlsDocument {
                   current.textContent=clock(g.preview);
                   progress.value=Math.round(g.preview/video.duration*1000);
                   paintProgress();
-                  message((g.dx>=0?'快进至 ':'快退至 ')+clock(g.preview));
-                  chromeVisible(true);
+                  subtleFeedback('↔ '+clock(g.preview),'center',false);
                 }
               });
               gestureLayer.addEventListener('pointerup',function(e){
