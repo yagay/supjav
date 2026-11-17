@@ -15,7 +15,9 @@ internal enum class SupjavLine {
     EVS, FST, VAS, VOE, LUC, TV, ST, UNKNOWN;
     companion object {
         fun of(name: String): SupjavLine {
-            val normalized = name.trim().uppercase(Locale.US).substringBefore(' ')
+            val normalized = name.trim().uppercase(Locale.US)
+                .replace(Regex("""\b(?:CD|DISC|PART)[ _-]*0?[1-9][0-9]?\b"""), "")
+                .trim().trimStart { !it.isLetterOrDigit() }.substringBefore(' ')
             return entries.firstOrNull { it.name == normalized } ?: when (normalized) {
                 "STREAMTAPE", "STPLAYER" -> ST
                 "FAST", "FC2STREAM", "FPLAYER" -> FST
