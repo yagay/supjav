@@ -166,6 +166,28 @@ class BrowserHlsDocumentTest {
         assertFalse(html.contains("secret=hidden"))
     }
 
+
+    @Test fun cdControlsAreInsideHlsVideoAndDistinctFromLinePicker() {
+        val source = PlaybackSource(
+            "https://media.example.com/hls2/master.m3u8?token=hidden",
+            "application/x-mpegURL",
+            "https://evsishere.xyz/embed/a"
+        )
+        val html = requireNotNull(BrowserHlsDocument.render(
+            source, availableParts = listOf("CD1", "CD2"), activePart = "CD1"
+        ))
+        assertTrue(html.contains("id=\"cdRow\""))
+        assertTrue(html.contains("data-part=\"CD1\" disabled"))
+        assertTrue(html.contains("data-part=\"CD2\""))
+        assertTrue(html.contains("state('part:'+part)"))
+        assertTrue(html.contains("id=\"lines\""))
+        assertFalse(html.contains("token=hidden"))
+
+        val ordinary = requireNotNull(BrowserHlsDocument.render(source,
+            availableParts = listOf("CD1")))
+        assertFalse(ordinary.contains("id=\"cdRow\""))
+    }
+
     @Test fun rejectsMp4AndUnsafeHosts() {
         assertNull(BrowserHlsDocument.render(PlaybackSource(
             "https://media.example.com/a.mp4", "video/mp4",
