@@ -248,7 +248,8 @@ class SupjavSource {
             else it.attr("data-original").ifBlank { it.attr("src") }
         }?.let { resolveUrl(video.detailUrl, it) }.orEmpty().ifBlank { video.coverUrl }
         val tags = doc.select("a[href*=/tag/]").map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
-        val actors = doc.select("a[href*=/category/cast/], a[href*=/cast/]").map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
+        val castMetadata = parseCastMetadata(html, video.detailUrl)
+        val actors = castMetadata.names
         val makers = doc.select("a[href*=/category/maker/], a[href*=/maker/]").map { it.text().trim() }
             .filter { it.isNotEmpty() }.distinct()
         val categories = doc.select("a[href*=/category/]")
@@ -261,9 +262,11 @@ class SupjavSource {
             .filterNot { it.id == video.id }
         val description = doc.selectFirst(".post-content, .entry-content, .post-meta")?.text()
             .orEmpty().take(3000)
-        Diagnostics.log("DETAIL id=" + video.id + " servers=" + servers.size)
-        val taxonomy = parseBrowseOptions(html, video.detailUrl)
-            .map { BrowseLink(it.kind, it.label, it.path) }
+        Diagnostics.log("DETAIL id=" + video.id + " servers=" + servers.size +
+            " actors=" + actors.size + " makers=" + makers.size)
+        val taxonomy = (castMetadata.links + parseBrowseOptions(html, video.detailUrl)
+            .map { BrowseLink(it.kind, it.label, it.path) })
+            .distinctBy { it.kind to it.path }
         val published = doc.selectFirst("time[datetime], .post-date, .published")
             ?.let { it.attr("datetime").ifBlank { it.text() } }
             .orEmpty().trim().take(48).ifBlank { video.publishedAt }
@@ -274,6 +277,80 @@ class SupjavSource {
             description, tags, actors, servers, related, categories, makers, taxonomy)
     }
 
+
+    /** Cast entries on SUPJAV are often under .post-meta .cats p with a
+     * separate Cast: label, rather than only under a URL containing /cast/.
+     * Keep text-only names visible, but only make navigation links from the
+     * validated first-party taxonomy paths.
+     */
+    internal data class CastMetadata(
+        val names: List<String>, val links: List<BrowseLink>
+    )
+
+    internal fun parseCastMetadata(
+        html: String, base: String = BASE
+    ): CastMetadata {
+        val doc = Jsoup.parse(html, base)
+        val names = linkedSetOf<String>()
+        val links = mutableListOf<BrowseLink>()
+        val labelPattern = Regex(
+            """(?i)^\s*(?:cast|actors?|actresses?|出演|演员|演員|女優|女优)\s*[:：]\s*"""
+        )
+        val unavailable = setOf("n/a", "none", "unknown", "-", "无", "暂无", "不明")
+
+        fun addName(raw: String) {
+            val name = raw.trim().trim(',', '，', '、', ' ', ':', '：')
+            if (name.length in 1..80 && name.lowercase() !in unavailable) {
+                names.add(name)
+            }
+        }
+
+        fun addAnchor(
+            anchor: org.jsoup.nodes.Element, labeledCastRow: Boolean
+        ) {
+            val label = anchor.text().trim()
+            if (label.isBlank()) return
+            val options = parseBrowseOptions(anchor.outerHtml(), base)
+            val target = options.firstOrNull {
+                it.kind == FeedKind.ACTOR ||
+                    (labeledCastRow && it.kind == FeedKind.CATEGORY)
+            }
+            // Names may be plain text, but unrelated navigation links are not cast.
+            if (labeledCastRow || target?.kind == FeedKind.ACTOR) {
+                addName(label)
+                target?.let { links.add(BrowseLink(FeedKind.ACTOR, label, it.path)) }
+            }
+        }
+
+        // Labeled Cast paragraphs can contain links whose URL does not use
+        // /cast/. Restrict them to explicit metadata rows.
+        val rows = doc.select(
+            ".post-meta .cats p, .content .cats p, .cats p, .post-meta p"
+        ).distinct()
+        for (row in rows) {
+            val heading = row.selectFirst("span, strong, b, label")?.text().orEmpty()
+            val isCast = labelPattern.containsMatchIn(heading) ||
+                labelPattern.containsMatchIn(row.ownText()) ||
+                labelPattern.containsMatchIn(row.text())
+            if (!isCast) continue
+            val anchors = row.select("a[href]")
+            anchors.forEach { addAnchor(it, labeledCastRow = true) }
+            if (anchors.isEmpty()) {
+                labelPattern.replace(row.text(), "")
+                    .split(',', '，', '、', ';', '；', '/')
+                    .forEach(::addName)
+            }
+        }
+
+        // Older site themes omit the Cast: label but keep /cast/ routes.
+        // Validate origin and path through parseBrowseOptions before accepting.
+        doc.select(
+            ".post-meta a[href*=/cast/], .content .cats a[href*=/cast/], " +
+                ".cats a[href*=/cast/], .post-meta a[href*=/category/cast/]"
+        ).forEach { addAnchor(it, labeledCastRow = false) }
+
+        return CastMetadata(names.toList(), links.distinctBy { it.path })
+    }
 
     /**
      * Extract only recognized player selectors. This stays independent of
