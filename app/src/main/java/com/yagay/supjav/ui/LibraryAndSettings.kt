@@ -106,9 +106,7 @@ private enum class SettingsCategory(
     val title: String, val description: String
 ) {
     HOME("设置", ""),
-    QUALITY("视频画质", "默认清晰度和画质选择策略"),
-    PLAYBACK("播放默认", "播放速度、画面比例、线路、续播"),
-    GESTURES("手势与控制", "双击跳转和长按倍速"),
+    PLAYBACK("播放器设置", "画质、播放、手势与默认行为"),
     BACKGROUND("后台与小窗", "后台暂停、画中画与网页兼容"),
     APPEARANCE("外观与启动", "启动页面、主题与封面列数"),
     DATA("数据与诊断", "导出日志、管理播放历史")
@@ -258,6 +256,8 @@ fun SettingsScreen(
             SettingsOption(it.toString(), PlaybackDefaults.speedLabel(it))
         }
         "fill" -> listOf(SettingsOption("fit", "适应画面"), SettingsOption("zoom", "铺满画面"))
+        "autoplay" -> listOf(SettingsOption("true", "自动播放"), SettingsOption("false", "手动播放"))
+        "resume" -> listOf(SettingsOption("true", "从上次进度继续"), SettingsOption("false", "从头开始"))
         "line" -> PlaybackDefaults.lineOptions.map {
             SettingsOption(it, if (it == "auto") "网站首条" else it)
         }
@@ -283,6 +283,8 @@ fun SettingsScreen(
         "quality" -> qualityPreference
         "speed" -> defaultSpeed.toString()
         "fill" -> if (defaultFill) "zoom" else "fit"
+        "autoplay" -> autoplay.toString()
+        "resume" -> resumePlayback.toString()
         "line" -> preferredLine
         "seek" -> skipSeconds.toString()
         "hold" -> holdSpeed.toString()
@@ -294,6 +296,8 @@ fun SettingsScreen(
         "quality" -> "默认视频画质"
         "speed" -> "默认播放速度"
         "fill" -> "默认画面比例"
+        "autoplay" -> "自动开始播放"
+        "resume" -> "恢复播放进度"
         "line" -> "首选播放线路"
         "seek" -> "双击快进／快退"
         "hold" -> "长按两侧倍速"
@@ -325,22 +329,10 @@ fun SettingsScreen(
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp))
                         SettingsCard {
                             SettingsCategoryRow(
-                                "视频画质", "清晰度优先级",
+                                "播放器设置", "画质、播放速度、线路、手势等",
                                 Icons.Outlined.PlayCircleOutline,
                                 VideoQualityPolicy.label(qualityPreference)
-                            ) { category = SettingsCategory.QUALITY }
-                            HorizontalDivider()
-                            SettingsCategoryRow(
-                                "播放默认", "速度、比例、线路、自动播放与续播",
-                                Icons.Outlined.Tune,
-                                PlaybackDefaults.speedLabel(defaultSpeed)
                             ) { category = SettingsCategory.PLAYBACK }
-                            HorizontalDivider()
-                            SettingsCategoryRow(
-                                "手势与控制", "快进快退、长按倍速",
-                                Icons.Outlined.TouchApp,
-                                skipSeconds.toString() + " 秒"
-                            ) { category = SettingsCategory.GESTURES }
                             HorizontalDivider()
                             SettingsCategoryRow(
                                 "后台与小窗", "后台暂停、画中画、线路兼容",
@@ -365,76 +357,57 @@ fun SettingsScreen(
                             modifier = Modifier.padding(horizontal = 6.dp))
                     }
 
-                    SettingsCategory.QUALITY -> {
-                        SettingsCard {
-                            SettingsValueRow(
-                                "默认视频画质", VideoQualityPolicy.label(qualityPreference),
-                                "选择最高可用、自动或指定分辨率"
-                            ) { picker = "quality" }
-                        }
-                        Text("最高可用仅表示当前视频源实际提供的最高分辨率。原生与内置 HLS 可以切换；第三方网页播放器仍由网站控制。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 6.dp))
-                    }
-
                     SettingsCategory.PLAYBACK -> {
+                        Text("视频和播放",
+                            modifier = Modifier.padding(horizontal = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                         SettingsCard {
                             SettingsValueRow(
-                                "默认播放速度", PlaybackDefaults.speedLabel(defaultSpeed)
+                                "默认画质", VideoQualityPolicy.label(qualityPreference)
+                            ) { picker = "quality" }
+                            HorizontalDivider()
+                            SettingsValueRow(
+                                "播放速度", PlaybackDefaults.speedLabel(defaultSpeed)
                             ) { picker = "speed" }
                             HorizontalDivider()
                             SettingsValueRow(
-                                "默认画面比例", if (defaultFill) "铺满" else "适应"
+                                "画面比例", if (defaultFill) "铺满" else "适应"
                             ) { picker = "fill" }
                             HorizontalDivider()
                             SettingsValueRow(
-                                "首选播放线路",
-                                if (preferredLine == "auto") "网站首条" else preferredLine,
-                                "优先尝试首选线路；不可用则回退到网站首条"
+                                "首选线路", if (preferredLine == "auto") "网站首条" else preferredLine
                             ) { picker = "line" }
                             HorizontalDivider()
-                            SupjavSettingToggle(
-                                "自动开始播放",
-                                "原生与内置 HLS 生效；第三方网页可能自行播放",
-                                autoplay
-                            ) {
-                                autoplay = it
-                                prefs.edit().putBoolean(PlaybackDefaults.AUTOPLAY, it).apply()
-                            }
+                            SettingsValueRow(
+                                "自动开始播放", if (autoplay) "开启" else "关闭"
+                            ) { picker = "autoplay" }
                             HorizontalDivider()
-                            SupjavSettingToggle(
-                                "恢复上次播放进度",
-                                "重新打开视频时从历史进度继续",
-                                resumePlayback
-                            ) {
-                                resumePlayback = it
-                                prefs.edit().putBoolean(PlaybackDefaults.RESUME, it).apply()
-                            }
+                            SettingsValueRow(
+                                "恢复上次进度", if (resumePlayback) "开启" else "关闭"
+                            ) { picker = "resume" }
                         }
-                        OutlinedButton(
-                            onClick = { resetPlayback() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("恢复全部播放默认值") }
-                        Text("仅重置画质、速度、比例、线路、手势与续播设置；不删除收藏和历史。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 6.dp))
-                    }
-
-                    SettingsCategory.GESTURES -> {
+                        Text("手势与控制",
+                            modifier = Modifier.padding(horizontal = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                         SettingsCard {
                             SettingsValueRow(
-                                "双击快进／快退", skipSeconds.toString() + " 秒",
-                                "左右两侧双击跳转时间"
+                                "双击快进／快退", skipSeconds.toString() + " 秒"
                             ) { picker = "seek" }
                             HorizontalDivider()
                             SettingsValueRow(
-                                "长按两侧播放倍速",
-                                PlaybackDefaults.speedLabel(holdSpeed),
-                                "松手自动恢复原速度"
+                                "长按两侧倍速", PlaybackDefaults.speedLabel(holdSpeed)
                             ) { picker = "hold" }
                         }
+                        TextButton(
+                            onClick = { resetPlayback() },
+                            modifier = Modifier.align(Alignment.End)
+                        ) { Text("恢复播放默认设置") }
+                        Text("点击任一选项，在弹出菜单中选择并自动保存。播放器内的临时更改不会覆盖这里的默认值。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp))
                     }
 
                     SettingsCategory.BACKGROUND -> {
@@ -582,6 +555,16 @@ fun SettingsScreen(
                                     defaultFill = option.value == "zoom"
                                     prefs.edit().putBoolean(
                                         PlaybackDefaults.FIT, defaultFill).apply()
+                                }
+                                "autoplay" -> {
+                                    autoplay = option.value == "true"
+                                    prefs.edit().putBoolean(
+                                        PlaybackDefaults.AUTOPLAY, autoplay).apply()
+                                }
+                                "resume" -> {
+                                    resumePlayback = option.value == "true"
+                                    prefs.edit().putBoolean(
+                                        PlaybackDefaults.RESUME, resumePlayback).apply()
                                 }
                                 "line" -> {
                                     preferredLine = PlaybackDefaults.line(option.value)
