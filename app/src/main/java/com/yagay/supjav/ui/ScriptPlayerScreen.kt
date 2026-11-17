@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -27,6 +28,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.yagay.supjav.data.MediaSourceDetector
 import com.yagay.supjav.data.SelectedMediaSession
+import com.yagay.supjav.data.NativeMediaCandidateVerifier
 import com.yagay.supjav.data.SitePlayerWrapper
 import com.yagay.supjav.data.SupjavSource
 import com.yagay.supjav.model.PlaybackSource
@@ -51,6 +53,8 @@ fun ScriptPlayerScreen(
     var status by remember(server.id, server.link) { mutableStateOf("正在载入网站播放器") }
     var reload by remember(server.id, server.link) { mutableIntStateOf(0) }
     var detected by remember(server.id, server.link) { mutableStateOf<PlaybackSource?>(null) }
+    var nativeProbeStatus by remember(server.id, server.link) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -66,6 +70,7 @@ fun ScriptPlayerScreen(
             }
             TextButton(onClick = {
                 detected = null
+                nativeProbeStatus = null
                 reload++
             }) { Text("刷新") }
         }
@@ -99,7 +104,7 @@ fun ScriptPlayerScreen(
             }
         } else {
             Text(
-                "正在从当前线路识别可播放的 MP4/HLS。可以直接使用下方网页播放器；人工验证不能自动跳过。",
+                nativeProbeStatus ?: "正在识别当前线路的 MP4/HLS，并验证原生播放器能否访问。网页播放可以独立使用；人工验证不能自动跳过。",
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -121,20 +126,59 @@ fun ScriptPlayerScreen(
             val reportedOrigins = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
             val reportedFrames = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
             val reportedMedia = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
+            val testedMedia = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
+            val testCount = remember { java.util.concurrent.atomic.AtomicInteger(0) }
+            val verifier = remember { NativeMediaCandidateVerifier() }
             fun offer(source: PlaybackSource, method: String) {
                 handler.post {
-                    if (!alive.get() || !selected.get()) return@post
-                    val prev = detected
-                    val preferNew = prev == null ||
-                        (method == "script" && prev.mimeType == "video/mp4" &&
-                            source.mimeType == "application/x-mpegURL")
-                    if (!preferNew) return@post
-                    detected = source
-                    status = "已发现媒体源，可尝试原生播放"
-                    Diagnostics.log("WEB_MEDIA_DETECTED via=" + method +
+                    if (!alive.get() || !selected.get() || detected != null) return@post
+                    // Document-start scripts report the same signed URL every
+                    // 600ms; probe each exact candidate only once per session.
+                    if (!testedMedia.add(source.url) || testCount.incrementAndGet() > 6) return@post
+                    nativeProbeStatus = "发现候选媒体，正在验证原生播放是否可用…"
+                    Diagnostics.log("WEB_MEDIA_CANDIDATE via=" + method +
                         " host=" + Uri.parse(source.url).host +
                         " refererHost=" + Uri.parse(source.referer).host +
                         " type=" + source.mimeType)
+                    scope.launch {
+                        val result = verifier.verify(source)
+                        if (!alive.get() || !selected.get()) return@launch
+                        when (result) {
+                            is NativeMediaCandidateVerifier.Result.Ready -> {
+                                if (detected == null) {
+                                    detected = result.source
+                                    nativeProbeStatus = null
+                                    status = "原生媒体验证成功，可以尝试 Media3"
+                                    Diagnostics.log("WEB_NATIVE_PROBE_READY via=" + method +
+                                        " host=" + Uri.parse(result.source.url).host +
+                                        " type=" + result.source.mimeType)
+                                    Diagnostics.log("WEB_MEDIA_DETECTED via=" + method +
+                                        " host=" + Uri.parse(result.source.url).host +
+                                        " refererHost=" + Uri.parse(result.source.referer).host +
+                                        " type=" + result.source.mimeType)
+                                }
+                            }
+                            is NativeMediaCandidateVerifier.Result.Rejected -> {
+                                Diagnostics.log("WEB_NATIVE_PROBE_REJECTED via=" + method +
+                                    " host=" + Uri.parse(source.url).host +
+                                    " status=" + result.status +
+                                    " reason=" + result.reason)
+                                if (detected == null) {
+                                    val reason = when (result.status) {
+                                        403 -> "HTTP 403：源站拒绝原生网络请求"
+                                        401 -> "HTTP 401：媒体地址需要认证"
+                                        404 -> "HTTP 404：候选媒体地址无效或已过期"
+                                        429 -> "HTTP 429：请求被限制"
+                                        else -> "原生验证失败：" + (result.status?.toString()
+                                            ?: result.reason.take(30))
+                                    }
+                                    nativeProbeStatus = "发现 HLS/MP4，但" + reason +
+                                        "。可继续网页播放或返回更换线路。"
+                                    status = "网页播放器已加载，原生媒体验证未通过"
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -216,7 +260,6 @@ fun ScriptPlayerScreen(
                                         claimedOrigin, document, media.optString(i)
                                     ) ?: continue
                                     offer(source, "script")
-                                    break
                                 }
                             }
                             WebViewCompat.addDocumentStartJavaScript(
