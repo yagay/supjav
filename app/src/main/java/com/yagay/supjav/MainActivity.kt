@@ -193,6 +193,9 @@ private fun Root(
     var lineSwitchJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     var showSettings by remember { mutableStateOf(false) }
+    // Child category pages expose their local return-to-directory action.
+    // Only Root owns the OS Back callback, including while a player is open.
+    var categoryBackAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var libraryRevision by remember { mutableIntStateOf(0) }
     var targetCategoryKind by remember { mutableStateOf<FeedKind?>(null) }
@@ -317,6 +320,10 @@ private fun Root(
                 Diagnostics.log("NAV_BACK_LEAVE_DETAIL video=" + from +
                     " popped=" + removed + " remaining=" + routes.size)
             }
+            tab == SupjavTab.CATEGORY && categoryBackAction != null -> {
+                Diagnostics.log("NAV_BACK_TO_CATEGORY_DIRECTORY")
+                categoryBackAction?.invoke()
+            }
             activeSearchValue.isNotBlank() -> {
                 clearSearch()
                 Diagnostics.log("NAV_BACK_CLEAR_SEARCH")
@@ -325,6 +332,10 @@ private fun Root(
                 clearSearch()
                 tab = SupjavTab.RECOMMEND
                 Diagnostics.log("NAV_BACK_TO_RECOMMEND")
+            }
+            else -> {
+                Diagnostics.log("NAV_BACK_FINISH_ACTIVITY")
+                (context as? ComponentActivity)?.finish()
             }
         }
     }
@@ -405,12 +416,10 @@ private fun Root(
         }
     }
 
-    BackHandler(
-        enabled = ((partPickerOpen || linePickerOpen) && activeVideo != null) ||
-            showSettings || webServer != null || showPlayer ||
-            routes.isNotEmpty() || activeSearchValue.isNotBlank() ||
-            tab != SupjavTab.RECOMMEND
-    ) {
+    // Keep this callback registered for the lifetime of the normal UI.
+    // Repeatedly enabling/disabling it during transitions can lose a Back
+    // gesture just as a video page enters or leaves the composition.
+    BackHandler(enabled = !inPip) {
         Diagnostics.log("NAV_BACK_SYSTEM tab=" + tab.name +
             " detailDepth=" + routes.size +
             " detail=" + (activeVideo?.id ?: "none") +
@@ -504,9 +513,7 @@ private fun Root(
                                     initialKind = targetCategoryKind,
                                     initialPath = targetCategoryPath,
                                     directoryFilter = searchInput,
-                                    backEnabled = routes.isEmpty() && !showPlayer &&
-                                        webServer == null && !showSettings &&
-                                        !((linePickerOpen || partPickerOpen) && activeVideo != null)
+                                    onBackActionChanged = { categoryBackAction = it }
                                 )
                                 SupjavTab.RANK -> RankPage(app, onOpen)
                                 SupjavTab.MINE -> MinePage(
