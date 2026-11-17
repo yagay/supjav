@@ -858,51 +858,64 @@ fun PlayerScreen(
                         else Text("+" + skipSeconds + "s", color = Color.White)
                     }
                 }
-                // Secondary actions remain evenly spaced; 5 × 42 dp also fit
-                // narrow portrait layouts instead of competing with transport.
+                // Anchor source/quality to the start and view actions to
+                // the end. Conditional HD/PiP buttons no longer redistribute
+                // every icon when the available media options change.
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = onShowLinePicker, modifier = Modifier.size(42.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Outlined.Tune, "切换播放线路", tint = Color.White)
-                    }
-                    if (qualityHeights.size > 1) {
                         IconButton(
-                            onClick = { qualityPickerOpen = true },
+                            onClick = onShowLinePicker,
                             modifier = Modifier.size(42.dp)
                         ) {
-                            Text("HD", color = Color.White,
-                                style = MaterialTheme.typography.labelMedium)
+                            Icon(Icons.Outlined.Tune, "切换播放线路", tint = Color.White)
+                        }
+                        if (qualityHeights.size > 1) {
+                            IconButton(
+                                onClick = { qualityPickerOpen = true },
+                                modifier = Modifier.size(42.dp)
+                            ) {
+                                Text("HD", color = Color.White,
+                                    style = MaterialTheme.typography.labelMedium)
+                            }
                         }
                     }
-                    if (prefs.getBoolean("manual_pip", true)) {
+                    Spacer(Modifier.weight(1f))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         IconButton(
-                            onClick = enterPip, modifier = Modifier.size(42.dp)
+                            onClick = { expandedSettings = true },
+                            modifier = Modifier.size(42.dp)
                         ) {
-                            Icon(Icons.Outlined.PictureInPictureAlt, "画中画",
-                                tint = Color.White)
+                            Icon(Icons.Outlined.MoreVert, "播放设置", tint = Color.White)
                         }
-                    }
-                    IconButton(
-                        onClick = { expandedSettings = true },
-                        modifier = Modifier.size(42.dp)
-                    ) {
-                        Icon(Icons.Outlined.MoreVert, "播放设置", tint = Color.White)
-                    }
-                    IconButton(
-                        onClick = {
-                            (context as? Activity)?.requestedOrientation =
-                                if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                                else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                        }, modifier = Modifier.size(42.dp)
-                    ) {
-                        Icon(if (landscape) Icons.Outlined.FullscreenExit
-                            else Icons.Outlined.Fullscreen,
-                            "切换横竖屏", tint = Color.White)
+                        if (prefs.getBoolean("manual_pip", true)) {
+                            IconButton(
+                                onClick = enterPip,
+                                modifier = Modifier.size(42.dp)
+                            ) {
+                                Icon(Icons.Outlined.PictureInPictureAlt, "画中画",
+                                    tint = Color.White)
+                            }
+                        }
+                        IconButton(
+                            onClick = {
+                                (context as? Activity)?.requestedOrientation =
+                                    if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                    else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                            }, modifier = Modifier.size(42.dp)
+                        ) {
+                            Icon(if (landscape) Icons.Outlined.FullscreenExit
+                                else Icons.Outlined.Fullscreen,
+                                "切换横竖屏", tint = Color.White)
+                        }
                     }
                 }
                 if (currentError != null) {
