@@ -60,6 +60,12 @@ fun CategoryPage(
             chosenKind = initialKind
             app.categoryStore.markVisited(initialPath)
             visited = app.categoryStore.recent()
+        } else if (initialKind == null) {
+            // Opening the primary Category tab should start at the directory,
+            // not unexpectedly reopen a previously selected item.
+            selectedKind = null
+            selectedPath = ""
+            selectedTitle = ""
         }
     }
     LaunchedEffect(app, reload) {
