@@ -67,7 +67,15 @@ fun DetailScreen(
         error = null
         try {
             favorite = withContext(Dispatchers.IO) { app.library.isFavorite(video.id) }
-            detail = app.source.detail(video)
+            val response = app.source.detail(video)
+            detail = response
+            withContext(Dispatchers.IO) {
+                app.categoryStore.save(response.taxonomy.map {
+                    com.yagay.supjav.data.SupjavSource.BrowseOption(
+                        it.kind, it.path.substringAfterLast('/'), it.label, it.path
+                    )
+                })
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

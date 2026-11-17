@@ -109,7 +109,7 @@ fun SearchPage(
     var activeLabel by remember { mutableStateOf(initialValue) }
     var activeKind by remember { mutableStateOf(initialKind) }
     var recent by remember { mutableStateOf(emptyList<String>()) }
-    var options by remember { mutableStateOf<List<SupjavSource.BrowseOption>>(emptyList()) }
+    var options by remember { mutableStateOf(app.categoryStore.snapshot()) }
     var optionsError by remember { mutableStateOf<String?>(null) }
     var optionsLoading by remember { mutableStateOf(true) }
     var refresh by remember { mutableIntStateOf(0) }
@@ -128,7 +128,11 @@ fun SearchPage(
     }
     LaunchedEffect(app) {
         try {
-            options = app.source.browseOptions()
+            val observed = app.source.browseOptions()
+            options = withContext(Dispatchers.IO) {
+                app.categoryStore.save(observed)
+                app.categoryStore.snapshot()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

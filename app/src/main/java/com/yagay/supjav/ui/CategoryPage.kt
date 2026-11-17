@@ -67,8 +67,10 @@ fun CategoryPage(
         try {
             val found = app.source.browseOptions()
             if (found.isNotEmpty()) {
-                directory = found
-                withContext(Dispatchers.IO) { app.categoryStore.save(found) }
+                directory = withContext(Dispatchers.IO) {
+                    app.categoryStore.save(found)
+                    app.categoryStore.snapshot()
+                }
             }
         } catch (e: CancellationException) {
             throw e
