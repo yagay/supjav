@@ -270,8 +270,15 @@ fun DetailScreen(
                 SupjavSectionTitle("演员")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(d.actors) { actor ->
-                        AssistChip(onClick = { onFilter(FeedKind.ACTOR, d.taxonomy.firstOrNull { it.kind == FeedKind.ACTOR && it.label == actor }?.path ?: actor) },
-                            label = { Text(actor) })
+                        val target = d.taxonomy.firstOrNull {
+                            it.kind == FeedKind.ACTOR &&
+                                it.label.equals(actor, ignoreCase = true)
+                        }?.path
+                        AssistChip(
+                            onClick = { target?.let { onFilter(FeedKind.ACTOR, it) } },
+                            enabled = target != null,
+                            label = { Text(actor) }
+                        )
                     }
                 }
             }
@@ -279,8 +286,15 @@ fun DetailScreen(
                 SupjavSectionTitle("标签")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(d.tags) { tag ->
-                        AssistChip(onClick = { onFilter(FeedKind.TAG, d.taxonomy.firstOrNull { it.kind == FeedKind.TAG && it.label == tag }?.path ?: tag) },
-                            label = { Text(tag) })
+                        val target = d.taxonomy.firstOrNull {
+                            it.kind == FeedKind.TAG &&
+                                it.label.equals(tag, ignoreCase = true)
+                        }?.path
+                        AssistChip(
+                            onClick = { target?.let { onFilter(FeedKind.TAG, it) } },
+                            enabled = target != null,
+                            label = { Text(tag) }
+                        )
                     }
                 }
             }
