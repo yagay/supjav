@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Leaderboard
@@ -26,7 +28,7 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Visual design derived from the user's kaixinguo-android main theme:
- * pistachio green, neutral containers, adaptive poster density and five labeled tabs.
+ * pistachio green, neutral containers, adaptive poster density and site-driven category navigation alongside the core tabs.
  * Site APIs and local storage stay Supjav-native.
  */
 object SupjavMetrics {
@@ -39,9 +41,10 @@ object SupjavMetrics {
 }
 
 enum class SupjavTab(val title: String) {
-    RECOMMEND("推荐"), RANK("排行榜"), NEW("新剧"), MINE("我的"), SEARCH("搜索");
+    RECOMMEND("推荐"), CATEGORY("分类"), RANK("排行"), NEW("最新"), MINE("我的"), SEARCH("搜索");
     fun icon(selected: Boolean): ImageVector = when (this) {
         RECOMMEND -> if (selected) Icons.Filled.Home else Icons.Outlined.Home
+        CATEGORY -> if (selected) Icons.Filled.Category else Icons.Outlined.Category
         RANK -> if (selected) Icons.Filled.Leaderboard else Icons.Outlined.Leaderboard
         NEW -> if (selected) Icons.Filled.CalendarMonth else Icons.Outlined.CalendarMonth
         MINE -> if (selected) Icons.Filled.Star else Icons.Outlined.StarOutline
@@ -109,7 +112,7 @@ fun SupjavPrimaryNavigation(selected: SupjavTab, onSelect: (SupjavTab) -> Unit) 
                 selected = selected == tab,
                 onClick = { onSelect(tab) },
                 icon = { Icon(tab.icon(selected == tab), tab.title) },
-                label = { Text(tab.title, maxLines = 1) },
+                label = { Text(tab.title, maxLines = 1, style = MaterialTheme.typography.labelSmall) },
                 alwaysShowLabel = true
             )
         }
