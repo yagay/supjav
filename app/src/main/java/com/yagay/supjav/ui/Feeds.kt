@@ -128,9 +128,10 @@ fun FeedScreen(
     app: SupjavApp, kind: FeedKind, value: String,
     onVideo: (VideoItem) -> Unit, refreshKey: Int = 0
 ) {
-    var localRefresh by remember(kind, value, refreshKey) { mutableIntStateOf(0) }
-    val pageState = remember(app, kind, value, refreshKey, localRefresh) {
-        app.feedCache.getOrCreate(kind, value, refreshKey * 10000 + localRefresh)
+    // The cached feed survives tab/detail navigation. A refresh updates the
+    // same list atomically instead of constructing an empty, new cache page.
+    val pageState = remember(app, kind, value) {
+        app.feedCache.getOrCreate(kind, value, 0)
     }
     val data = pageState.items
     val grid = key(pageState) {
@@ -147,35 +148,84 @@ fun FeedScreen(
         else -> GridCells.Adaptive(SupjavMetrics.posterMinWidth)
     }
 
-    suspend fun loadMore() {
-        if (pageState.loading || pageState.endReached) return
+    suspend fun loadMore(forceRefresh: Boolean = false) {
+        if (pageState.loading || (!forceRefresh && pageState.endReached)) return
         pageState.loading = true
+        pageState.refreshing = forceRefresh
         pageState.error = null
+        val targetPage = if (forceRefresh) 1 else pageState.page + 1
+        val cursor = if (forceRefresh) null else pageState.nextPageUrl
         try {
-            val next = app.source.list(kind, value, pageState.page + 1)
-            val knownIds = data.mapTo(HashSet(data.size + next.size)) { it.id }
-            val unseen = next.filter { knownIds.add(it.id) }
-            data.addAll(unseen)
-            pageState.page++
+            val response = app.source.listPage(kind, value, targetPage, cursor)
+            val oldCount = data.size
+            val knownIds = (if (forceRefresh) emptyList() else data)
+                .mapTo(HashSet<String>(oldCount + response.items.size)) { it.id }
+            val unseen = response.items.filter { knownIds.add(it.id) }
+            // A failed refresh may return an empty challenge/placeholder
+            // page. Do not destroy the already-visible cached results.
+            if (forceRefresh && response.items.isEmpty() && oldCount > 0) {
+                throw IllegalStateException("站点返回空列表，已保留原有作品，请稍后刷新")
+            }
+            if (forceRefresh) {
+                data.clear()
+                data.addAll(unseen)
+                pageState.page = 1
+                pageState.duplicatePageStreak = 0
+                pageState.endReached = false
+                if (data.isNotEmpty()) grid.scrollToItem(0)
+            } else {
+                data.addAll(unseen)
+                pageState.page = targetPage
+                pageState.duplicatePageStreak =
+                    if (response.items.isNotEmpty() && unseen.isEmpty())
+                        pageState.duplicatePageStreak + 1 else 0
+            }
             pageState.loaded = true
-            // One duplicate page is not the end of a paginated feed. Two
-            // consecutive duplicate pages are a bounded protection against
-            // endlessly cycling websites.
-            pageState.duplicatePageStreak = if (next.isNotEmpty() && unseen.isEmpty())
-                pageState.duplicatePageStreak + 1 else 0
-            if (next.isEmpty() || pageState.duplicatePageStreak >= 2)
+            // Following the website's pagination is more reliable than
+            // synthesizing page/2/... and hoping its routing matches.
+            pageState.nextPageUrl = response.nextUrl?.takeUnless {
+                it == cursor
+            }
+            pageState.hasPager = response.hasPager
+            if (response.items.isEmpty() ||
+                (response.hasPager && response.nextUrl == null)) {
                 pageState.endReached = true
+            }
+            if (pageState.duplicatePageStreak >= 2) {
+                // A site which repeats page one for every page number must
+                // not silently look like "end of list". Expose the problem
+                // and keep the manual retry available.
+                pageState.error = "分页连续返回重复作品。可重试加载或下拉刷新。"
+            }
+            com.yagay.supjav.util.Diagnostics.log(
+                "FEED_PAGE kind=${kind.name} page=${pageState.page}" +
+                    " added=${unseen.size} total=${data.size}" +
+                    " next=${pageState.nextPageUrl != null} end=${pageState.endReached}" +
+                    " duplicates=${pageState.duplicatePageStreak}"
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            pageState.error = e.message?.take(160) ?: "请求失败"
+            pageState.error = e.message?.take(160) ?: "加载失败，请重试"
+            com.yagay.supjav.util.Diagnostics.log(
+                "FEED_PAGE_FAILED kind=${kind.name} page=$targetPage" +
+                    " error=${e.javaClass.simpleName}"
+            )
         } finally {
             pageState.loading = false
+            pageState.refreshing = false
         }
     }
 
-    LaunchedEffect(pageState) {
-        if (!pageState.loaded && pageState.error == null) loadMore()
+    LaunchedEffect(pageState, refreshKey) {
+        // Toolbar refresh and pull-to-refresh use exactly the same path.
+        if (!pageState.loaded && pageState.error == null) {
+            pageState.lastRefreshKey = refreshKey
+            loadMore()
+        } else if (pageState.lastRefreshKey != refreshKey) {
+            pageState.lastRefreshKey = refreshKey
+            loadMore(forceRefresh = true)
+        }
     }
     DisposableEffect(grid, pageState) {
         onDispose {
@@ -194,8 +244,8 @@ fun FeedScreen(
     }
 
     PullToRefreshBox(
-        isRefreshing = pageState.loading && data.isNotEmpty() && pageState.page == 0,
-        onRefresh = { localRefresh++ },
+        isRefreshing = pageState.refreshing,
+        onRefresh = { scope.launch { loadMore(forceRefresh = true) } },
         modifier = Modifier.fillMaxSize()
     ) {
         if (data.isEmpty() && pageState.loading) {
@@ -233,7 +283,7 @@ fun FeedScreen(
                                 pageState.loading -> CircularProgressIndicator(Modifier.size(24.dp))
                                 pageState.error != null -> TextButton(
                                     onClick = { scope.launch { loadMore() } }
-                                ) { Text("加载失败，点击重试") }
+                                ) { Text(pageState.error.orEmpty().take(60) + " · 重试") }
                                 else -> TextButton(
                                     onClick = { scope.launch { loadMore() } }
                                 ) { Text("加载更多") }
@@ -241,6 +291,11 @@ fun FeedScreen(
                         }
                     }
                 }
+            }
+            if (pageState.refreshing) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
+                )
             }
             if (grid.firstVisibleItemIndex >= 12) {
                 SmallFloatingActionButton(
