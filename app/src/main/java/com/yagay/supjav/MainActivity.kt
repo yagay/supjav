@@ -43,6 +43,8 @@ import com.yagay.supjav.data.SupjavLine
 import com.yagay.supjav.player.PlaybackDefaults
 import com.yagay.supjav.player.VideoParts
 import com.yagay.supjav.player.PlaybackQueuePolicy
+import com.yagay.supjav.data.PlaylistPageSource
+import com.yagay.supjav.data.PlaylistPageLoader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -191,6 +193,9 @@ private fun Root(
     var partPickerOpen by remember { mutableStateOf(false) }
     var playlistOpen by remember { mutableStateOf(false) }
     var playlistItems by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    // Retain the exact feed cache that supplied the clicked video. The player
+    // reads updates from it and can request its next site page directly.
+    var playlistSource by remember { mutableStateOf<PlaylistPageSource?>(null) }
     var playlistSwitching by remember { mutableStateOf<String?>(null) }
     var playlistError by remember { mutableStateOf<String?>(null) }
     var playlistJob by remember { mutableStateOf<Job?>(null) }
@@ -596,8 +601,9 @@ private fun Root(
                         FeedScreen(
                             app, activeSearchKind, activeSearchValue, onOpen,
                             refreshKey = searchRevision,
-                            onPlaylistCaptured = {
-                                playlistItems = PlaybackQueuePolicy.snapshot(it)
+                            onPlaylistCaptured = { items, source ->
+                                playlistItems = PlaybackQueuePolicy.snapshot(items)
+                                playlistSource = source
                             }
                         )
                     } else {
@@ -618,8 +624,9 @@ private fun Root(
                                         tab = SupjavTab.CATEGORY
                                     },
                                     refreshKey = refreshKey,
-                                    onPlaylistCaptured = {
-                                        playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                    onPlaylistCaptured = { items, source ->
+                                        playlistItems = PlaybackQueuePolicy.snapshot(items)
+                                        playlistSource = source
                                     }
                                 )
                                 SupjavTab.CATEGORY -> CategoryPage(
@@ -628,20 +635,23 @@ private fun Root(
                                     initialPath = targetCategoryPath,
                                     directoryFilter = searchInput,
                                     onBackActionChanged = { categoryBackAction = it },
-                                    onPlaylistCaptured = {
-                                        playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                    onPlaylistCaptured = { items, source ->
+                                        playlistItems = PlaybackQueuePolicy.snapshot(items)
+                                        playlistSource = source
                                     }
                                 )
                                 SupjavTab.RANK -> RankPage(app, onOpen,
-                                    onPlaylistCaptured = {
-                                        playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                    onPlaylistCaptured = { items, source ->
+                                        playlistItems = PlaybackQueuePolicy.snapshot(items)
+                                        playlistSource = source
                                     })
                                 SupjavTab.MINE -> MinePage(
                                     app, onOpen,
                                     onSettings = { showSettings = true },
                                     revision = libraryRevision,
-                                    onPlaylistCaptured = {
-                                        playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                    onPlaylistCaptured = { items, source ->
+                                        playlistItems = PlaybackQueuePolicy.snapshot(items)
+                                        playlistSource = source
                                     }
                                 )
                             }
@@ -677,8 +687,9 @@ private fun Root(
                                     showPlayer = true
                                 },
                                 onServersUpdated = { servers -> availableServers = servers },
-                                onPlaylistCaptured = {
-                                    playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                onPlaylistCaptured = { items, source ->
+                                    playlistItems = PlaybackQueuePolicy.snapshot(items)
+                                    playlistSource = source
                                 },
                                 onWebPlay = { server ->
                                     selectedServer = server
@@ -833,9 +844,26 @@ private fun Root(
         }
 
         if (playlistOpen && activeVideo != null) {
+            val source = playlistSource
+            // A feed is a live shared list; library and related lists are fixed
+            // snapshots. Always retain the current video as a selectable anchor.
+            val videos = PlaybackQueuePolicy.snapshot(
+                source?.pageState?.items?.toList() ?: playlistItems,
+                activeVideo
+            )
             PlayerPlaylistSheet(
-                videos = PlaybackQueuePolicy.snapshot(playlistItems, activeVideo),
+                videos = videos,
                 activeVideoId = activeVideo.id,
+                sourceKind = source?.kind,
+                paging = source?.pageState?.loading == true,
+                endReached = source == null || source.pageState.endReached,
+                pagingError = source?.pageState?.error,
+                onLoadMore = {
+                    val page = playlistSource
+                    if (page != null) scope.launch {
+                        PlaylistPageLoader.loadMore(app, page)
+                    }
+                },
                 switchingVideoId = playlistSwitching,
                 error = playlistError,
                 onSelect = ::playFromPlaylist,
