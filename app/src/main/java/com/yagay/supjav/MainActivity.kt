@@ -264,7 +264,12 @@ private fun Root(
                 webServer = null
             }
             showPlayer -> {
+                // Returning from the video screen must pause the Media3 engine;
+                // removing its Compose surface alone does not stop audio.
+                // Keep the media item and position for the mini-player / resume.
+                app.playerEngine.player.pause()
                 app.playerEngine.savePosition()
+                Diagnostics.log("PLAYER_NAVIGATE_BACK_PAUSE")
                 (context as? ComponentActivity)?.requestedOrientation =
                     ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                 showPlayer = false
