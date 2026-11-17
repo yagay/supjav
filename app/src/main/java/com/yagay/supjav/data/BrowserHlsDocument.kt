@@ -54,6 +54,7 @@ internal object BrowserHlsDocument {
             .top-button{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.12);font-size:24px}
             #center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:min(7vw,32px);pointer-events:none}
             #center button{pointer-events:auto;border-radius:50%;background:rgba(20,20,20,.55);backdrop-filter:blur(5px)}
+            #pausedIndicator{position:absolute;z-index:4;left:50%;top:50%;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.30);font-size:29px;color:#fff;pointer-events:none}
             #center .skip{width:54px;height:54px;font-size:15px;font-weight:600}
             #play{width:68px;height:68px;font-size:30px}
             .time-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
@@ -63,9 +64,10 @@ internal object BrowserHlsDocument {
             #progress::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:11px;height:11px;margin-top:-4px;background:#fff;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.35)}
             #progress::-moz-range-track{height:3px;background:rgba(255,255,255,.40);border-radius:3px}
             #progress::-moz-range-thumb{width:11px;height:11px;border:0;background:#fff;border-radius:50%}
-            .actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:4px}
-            .pill{height:37px;padding:0 12px;border-radius:19px;background:rgba(255,255,255,.14);font-size:13px;font-weight:550}
-            #speed{font-variant-numeric:tabular-nums;min-width:58px}
+            .actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:center;gap:6px;margin-top:4px}
+            .pill{height:37px;min-width:0;width:100%;padding:0 3px;border-radius:19px;background:rgba(255,255,255,.14);font-size:12px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            #speed{font-variant-numeric:tabular-nums}
+            @media(max-width:350px){.actions{grid-template-columns:repeat(4,minmax(0,1fr))}}
             [hidden]{display:none!important}
             #qualityMenu{position:absolute;right:12px;bottom:calc(73px + env(safe-area-inset-bottom));z-index:6;max-height:min(48vh,280px);overflow:auto;display:flex;flex-direction:column;gap:3px;min-width:116px;border-radius:12px;padding:6px;background:rgba(25,25,25,.96);box-shadow:0 4px 20px rgba(0,0,0,.4)}
             #qualityMenu button{min-height:36px;justify-content:flex-start;padding:6px 12px;border-radius:8px;font-size:13px}
@@ -98,7 +100,8 @@ internal object BrowserHlsDocument {
             <main id="player">
               <video id="video" playsinline webkit-playsinline preload="metadata"></video>
               <div id="spinner" aria-hidden="true"></div>
-              <div id="gestures" aria-label="单击播放暂停，双击两侧快退快进十秒，长按两侧两倍速，上下区域左右滑动调整进度"></div>
+              <div id="gestures" aria-label="首次单击显示控制栏，再次单击暂停，双击两侧跳转，长按两侧倍速，上下区域左右滑动进度"></div>
+              <div id="pausedIndicator" aria-label="已暂停" hidden>❚❚</div>
               <div id="chrome">
                 <div id="top">
                   <button class="top-button" id="back" aria-label="返回网站播放器">‹</button>
@@ -121,8 +124,7 @@ internal object BrowserHlsDocument {
                     <button id="aspect" class="pill" aria-label="切换画面比例">比例</button>
                     <button id="lines" class="pill" aria-label="切换播放线路">⇄</button>
                     <button id="quality" class="pill" aria-label="切换视频画质" hidden>HD</button>
-                    <span style="flex:1"></span>
-                    <button id="rotateBottom" class="pill" aria-label="切换横屏">⛶ 全屏</button>
+                    <button id="rotateBottom" class="pill" aria-label="切换横屏">⛶</button>
                   </div>
                 </div>
               </div>
@@ -149,6 +151,7 @@ internal object BrowserHlsDocument {
               var hintText = document.getElementById('hintText');
               var gestureFeedback = document.getElementById('gestureFeedback');
               var playFlash = document.getElementById('playFlash');
+              var pausedIndicator = document.getElementById('pausedIndicator');
               var gestureFeedbackTimer = null, playFlashTimer = null;
               var speed = document.getElementById('speed');
               var aspect = document.getElementById('aspect');
@@ -229,6 +232,8 @@ internal object BrowserHlsDocument {
               }
               function playbackIcon(){
                 play.textContent = video.paused ? '▶' : '❚❚';
+                pausedIndicator.hidden = !video.paused ||
+                  (video.readyState<2 && autoStart) || video.ended;
                 spinner.classList.toggle('hide', !video.paused && video.readyState>=2);
               }
               function paintProgress(){
@@ -246,13 +251,22 @@ internal object BrowserHlsDocument {
                 paintProgress();
               }
               function toggle(){
+                // Explicit transport play/pause button always acts immediately.
                 var willPlay=video.paused;
                 playbackFlash(willPlay);
                 if(willPlay){video.play().catch(function(){message('点击播放按钮重试');state('tap-play');});}
                 else video.pause();
-                // When pausing, show the controls; when resuming, leave the
-                // video unobstructed except for the brief play icon.
-                chromeVisible(!willPlay);
+                chromeVisible(true);
+              }
+              function onSurfaceTap(){
+                if(video.paused){toggle();return;}
+                if(chrome.classList.contains('hidden')){
+                  // First tap only reveals icons and the seek bar.
+                  chromeVisible(true);
+                  return;
+                }
+                // A second tap while controls are visible pauses.
+                toggle();
               }
               function skip(seconds){
                 if(!isFinite(video.duration) || video.duration<=0){message('暂时无法快进');return;}
@@ -482,7 +496,7 @@ internal object BrowserHlsDocument {
                 clearTimeout(singleTapTimer);
                 lastTap={time:now,side:side,x:g.x,y:g.y};
                 singleTapTimer=setTimeout(function(){
-                  lastTap=null;singleTapTimer=null;toggle();
+                  lastTap=null;singleTapTimer=null;onSurfaceTap();
                 },330);
               });
               gestureLayer.addEventListener('pointercancel',function(){
@@ -519,7 +533,7 @@ internal object BrowserHlsDocument {
               document.addEventListener('visibilitychange',function(){
                 if(!document.hidden)tick();
               });
-              tick();playbackIcon();chromeVisible(true);
+              tick();playbackIcon();chromeVisible(!autoStart);
               try{
                 if(window.Hls && Hls.isSupported()){
                   state('hlsjs');

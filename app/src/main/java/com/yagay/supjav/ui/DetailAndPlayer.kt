@@ -39,6 +39,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import com.yagay.supjav.player.VideoQualityPolicy
 import com.yagay.supjav.player.PlaybackDefaults
+import com.yagay.supjav.player.PlayerTapPolicy
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -367,6 +368,7 @@ fun PlayerScreen(
     val prefs = app.preferences
     var currentError by remember { mutableStateOf<String?>(null) }
     var isPlaying by remember { mutableStateOf(player.isPlaying) }
+    var playWhenReady by remember { mutableStateOf(player.playWhenReady) }
     var isBuffering by remember { mutableStateOf(player.playbackState == Player.STATE_BUFFERING) }
     var position by remember { mutableLongStateOf(player.currentPosition.coerceAtLeast(0)) }
     var duration by remember { mutableLongStateOf(player.duration.coerceAtLeast(0)) }
@@ -404,7 +406,7 @@ fun PlayerScreen(
             gestureFlash = null
         }
     }
-    var controlsVisible by remember { mutableStateOf(true) }
+    var controlsVisible by remember { mutableStateOf(!player.playWhenReady) }
     LaunchedEffect(controlsVisible, isPlaying, pip, gestureScrubbing, draggingSeek, pressBoostOriginal) {
         if (controlsVisible && isPlaying && !pip && currentError == null &&
             !gestureScrubbing && !draggingSeek && pressBoostOriginal == null) {
@@ -421,6 +423,10 @@ fun PlayerScreen(
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
                 if (value) currentError = null
+            }
+            override fun onPlayWhenReadyChanged(value: Boolean, reason: Int) {
+                playWhenReady = value
+                if (!value) controlsVisible = true
             }
             override fun onTracksChanged(tracks: Tracks) {
                 qualityHeights = engine.availableVideoHeights()
@@ -533,17 +539,23 @@ fun PlayerScreen(
                         .pointerInput(player, duration, skipSeconds, holdSpeed) {
                             detectTapGestures(
                                 onTap = {
-                                    // Single tap controls playback, not UI opacity.
-                                    if (player.playWhenReady) {
-                                        player.pause()
-                                        flash("pause")
-                                        // Paused viewers need access to the
-                                        // line/pip/settings controls.
-                                        controlsVisible = true
-                                    } else {
-                                        player.play()
-                                        flash("play")
-                                        controlsVisible = false
+                                    when (PlayerTapPolicy.onSurfaceTap(
+                                        controlsVisible, player.playWhenReady
+                                    )) {
+                                        PlayerTapPolicy.Action.REVEAL -> {
+                                            // The first tap reveals the whole control layer
+                                            // and progress, without changing playback.
+                                            controlsVisible = true
+                                        }
+                                        PlayerTapPolicy.Action.PAUSE -> {
+                                            player.pause()
+                                            controlsVisible = true
+                                        }
+                                        PlayerTapPolicy.Action.RESUME -> {
+                                            player.play()
+                                            flash("play")
+                                            controlsVisible = true
+                                        }
                                     }
                                 },
                                 onDoubleTap = { offset ->
@@ -638,6 +650,21 @@ fun PlayerScreen(
                 }
             }
         }
+        // A paused video keeps its pause mark in the center even after the
+        // transient gesture feedback has faded. It never captures touches.
+        if (!pip && !playWhenReady && currentError == null &&
+            !gestureScrubbing && pressBoostOriginal == null) {
+            Box(
+                Modifier.align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = .30f), CircleShape)
+                    .padding(12.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.Pause, "已暂停，点击画面继续播放",
+                    tint = Color.White, modifier = Modifier.size(32.dp)
+                )
+            }
+        }
         if (!pip && pressBoostOriginal != null) {
             Text(
                 PlaybackDefaults.speedLabel(holdSpeed),
@@ -703,58 +730,96 @@ fun PlayerScreen(
                         )
                     }
                 )
+                // Transport controls get their own centered row. Previously
+                // all eight buttons shared one row and overflowed narrow phones.
                 Row(
-                    Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        player.seekTo((player.currentPosition - skipMs).coerceAtLeast(0L))
-                    }) {
+                    IconButton(
+                        modifier = Modifier.size(46.dp),
+                        onClick = {
+                            player.seekTo((player.currentPosition - skipMs)
+                                .coerceAtLeast(0L))
+                        }
+                    ) {
                         if (skipSeconds == 10) Icon(Icons.Outlined.Replay10,
                             "后退10秒", tint = Color.White)
                         else Text("−" + skipSeconds + "s", color = Color.White)
                     }
-                    FilledIconButton(onClick = {
-                        if (isPlaying) player.pause() else player.play()
-                    }) {
+                    Spacer(Modifier.width(18.dp))
+                    FilledIconButton(
+                        modifier = Modifier.size(48.dp),
+                        onClick = {
+                            if (player.playWhenReady) player.pause() else player.play()
+                            controlsVisible = true
+                        }
+                    ) {
                         Icon(
-                            if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                            if (playWhenReady) Icons.Outlined.Pause
+                            else Icons.Outlined.PlayArrow,
                             "播放或暂停"
                         )
                     }
-                    IconButton(onClick = {
-                        player.seekTo((player.currentPosition + skipMs)
-                            .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
-                    }) {
+                    Spacer(Modifier.width(18.dp))
+                    IconButton(
+                        modifier = Modifier.size(46.dp),
+                        onClick = {
+                            player.seekTo((player.currentPosition + skipMs)
+                                .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
+                        }
+                    ) {
                         if (skipSeconds == 10) Icon(Icons.Outlined.Forward10,
                             "快进10秒", tint = Color.White)
                         else Text("+" + skipSeconds + "s", color = Color.White)
                     }
-                    IconButton(onClick = onShowLinePicker, modifier = Modifier.size(42.dp)) {
+                }
+                // Secondary actions remain evenly spaced; 5 × 42 dp also fit
+                // narrow portrait layouts instead of competing with transport.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onShowLinePicker, modifier = Modifier.size(42.dp)
+                    ) {
                         Icon(Icons.Outlined.Tune, "切换播放线路", tint = Color.White)
                     }
                     if (qualityHeights.size > 1) {
-                        IconButton(onClick = { qualityPickerOpen = true },
-                            modifier = Modifier.size(42.dp)) {
+                        IconButton(
+                            onClick = { qualityPickerOpen = true },
+                            modifier = Modifier.size(42.dp)
+                        ) {
                             Text("HD", color = Color.White,
                                 style = MaterialTheme.typography.labelMedium)
                         }
                     }
                     if (prefs.getBoolean("manual_pip", true)) {
-                        IconButton(onClick = enterPip, modifier = Modifier.size(42.dp)) {
-                            Icon(Icons.Outlined.PictureInPictureAlt, "画中画", tint = Color.White)
+                        IconButton(
+                            onClick = enterPip, modifier = Modifier.size(42.dp)
+                        ) {
+                            Icon(Icons.Outlined.PictureInPictureAlt, "画中画",
+                                tint = Color.White)
                         }
                     }
-                    IconButton(onClick = { expandedSettings = true }, modifier = Modifier.size(42.dp)) {
+                    IconButton(
+                        onClick = { expandedSettings = true },
+                        modifier = Modifier.size(42.dp)
+                    ) {
                         Icon(Icons.Outlined.MoreVert, "播放设置", tint = Color.White)
                     }
-                    IconButton(onClick = {
-                        (context as? Activity)?.requestedOrientation =
-                            if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                            else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                    }) {
+                    IconButton(
+                        onClick = {
+                            (context as? Activity)?.requestedOrientation =
+                                if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        }, modifier = Modifier.size(42.dp)
+                    ) {
                         Icon(if (landscape) Icons.Outlined.FullscreenExit
-                            else Icons.Outlined.Fullscreen, "切换横竖屏", tint = Color.White)
+                            else Icons.Outlined.Fullscreen,
+                            "切换横竖屏", tint = Color.White)
                     }
                 }
                 if (currentError != null) {

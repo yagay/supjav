@@ -60,7 +60,7 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("previousHoldRate"))
         assertTrue(html.contains("g.y<g.height*.30 || g.y>g.height*.70"))
         assertTrue(html.contains("singleTapTimer"))
-        assertTrue(html.contains("toggle();"))
+        assertTrue(html.contains("onSurfaceTap();"))
         assertTrue(html.contains("skip(side==='left'?-seekAmount:seekAmount)"))
         assertFalse(html.contains("lastTapTime=0"))
     }
@@ -80,6 +80,21 @@ class BrowserHlsDocumentTest {
         assertFalse(html.contains("message('2× 倍速播放"))
         assertFalse(html.contains("message('已恢复"))
         assertFalse(html.contains("secret=not-for-log"))
+    }
+
+    @Test fun firstTapRevealsControlsAndPausedIndicatorPersists() {
+        val html = requireNotNull(BrowserHlsDocument.render(PlaybackSource(
+            "https://cdn.example.com/hls/master.m3u8?private=yes",
+            "application/x-mpegURL", "https://evsishere.xyz/embed/a"
+        )))
+        assertTrue(html.contains("function onSurfaceTap()"))
+        assertTrue(html.contains("if(chrome.classList.contains('hidden'))"))
+        assertTrue(html.contains("chromeVisible(true);"))
+        assertTrue(html.contains("onSurfaceTap();"))
+        assertTrue(html.contains("id=\"pausedIndicator\""))
+        assertTrue(html.contains("pausedIndicator.hidden = !video.paused"))
+        assertTrue(html.contains(".actions{display:grid"))
+        assertFalse(html.contains("private=yes"))
     }
 
     @Test fun resumedVideoEmitsOnlyBoundedProgressMetadata() {
