@@ -75,11 +75,8 @@ fun ScriptPlayerScreen(
     DisposableEffect(server.link) {
         onDispose { reportEmbeddedMode(false) }
     }
-    androidx.activity.compose.BackHandler(enabled = useEmbeddedHls) {
-        useEmbeddedHls = false
-        reload++
-    }
-
+    // Root owns system Back for every web-player mode, including embedded
+    // HLS. The explicit "website player" control still switches renderers.
     if (useEmbeddedHls && browserHlsSource != null) {
         // Video and its mobile controls occupy the entire playback surface.
         // No extra Compose status/refresh toolbar above the video.
