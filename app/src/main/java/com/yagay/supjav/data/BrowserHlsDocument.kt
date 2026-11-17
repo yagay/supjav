@@ -22,7 +22,9 @@ internal object BrowserHlsDocument {
         initialBrightness: Float = 0.5f,
         initialVolume: Float = 0.5f,
         availableParts: List<String> = emptyList(),
-        activePart: String? = null
+        activePart: String? = null,
+        hasPreviousVideo: Boolean = false,
+        hasNextVideo: Boolean = false
     ): String? {
         if (source.mimeType != "application/x-mpegURL" ||
             MediaSourceDetector.origin(source.url) == null ||
@@ -43,6 +45,8 @@ internal object BrowserHlsDocument {
         // the controls HTML or the bridge's event payload.
         val parts = availableParts.distinct()
             .filter { Regex("""^CD[1-9][0-9]?$""").matches(it) }.take(10)
+        val prevDisabled = if (hasPreviousVideo) "" else " disabled"
+        val nextDisabled = if (hasNextVideo) "" else " disabled"
         val partMarkup = if (parts.size > 1) {
             val buttons = parts.joinToString("") { part ->
                 val selected = part == activePart
@@ -77,7 +81,9 @@ internal object BrowserHlsDocument {
             button{display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;color:#fff;font:inherit;cursor:pointer;user-select:none}
             button:active{transform:scale(.94)}
             .top-button{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.12);font-size:24px}
-            #center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:min(7vw,32px);pointer-events:none}
+            #center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:clamp(4px,1.5vw,12px);pointer-events:none}
+            #center .queue-nav{width:32px;height:36px;font-size:20px}
+            #center .queue-nav:disabled{opacity:.3;pointer-events:none}
             #center button{pointer-events:auto;border-radius:50%;background:rgba(20,20,20,.55);backdrop-filter:blur(5px)}
             #gestureSeek{position:absolute;left:12px;right:12px;bottom:calc(24px + env(safe-area-inset-bottom));z-index:7;padding:12px 14px;border-radius:12px;background:rgba(0,0,0,.68);pointer-events:none}
             #gestureSeekTime{display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;font-variant-numeric:tabular-nums}
@@ -130,7 +136,8 @@ internal object BrowserHlsDocument {
               #play{width:64px;height:64px}#center .skip{width:50px;height:50px}
             }
             @media(max-width:350px){
-              #center{gap:15px}#center .skip{width:48px;height:48px}
+              #center{gap:4px}#center .skip{width:42px;height:42px}
+              #center .queue-nav{width:28px;height:32px}
               #play{width:60px;height:60px}
             }
             </style>
@@ -155,9 +162,11 @@ internal object BrowserHlsDocument {
                   <button class="top-button" id="rotate" aria-label="横屏或竖屏">⛶</button>
                 </div>
                 <div id="center">
+                  <button class="queue-nav" id="previousVideo" aria-label="上一部"$prevDisabled>⏮</button>
                   <button class="skip" id="back10" aria-label="快退${playbackSkip}秒">↶$playbackSkip</button>
                   <button id="play" aria-label="播放或暂停">▶</button>
                   <button class="skip" id="forward10" aria-label="快进${playbackSkip}秒">$playbackSkip↷</button>
+                  <button class="queue-nav" id="nextVideo" aria-label="下一部"$nextDisabled>⏭</button>
                 </div>
                 <div id="bottom">
                   $partMarkup
@@ -335,6 +344,12 @@ internal object BrowserHlsDocument {
               }
               function rotate(){ state('rotate');chromeVisible(true); }
               document.getElementById('play').addEventListener('click',toggle);
+              document.getElementById('previousVideo').addEventListener('click',function(){
+                state('queue-previous');chromeVisible(true);
+              });
+              document.getElementById('nextVideo').addEventListener('click',function(){
+                state('queue-next');chromeVisible(true);
+              });
               document.getElementById('back10').addEventListener('click',function(){skip(-seekAmount);});
               document.getElementById('forward10').addEventListener('click',function(){skip(seekAmount);});
               document.getElementById('back').addEventListener('click',function(){state('website');});
