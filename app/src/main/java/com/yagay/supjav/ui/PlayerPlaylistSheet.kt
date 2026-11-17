@@ -1,109 +1,164 @@
 package com.yagay.supjav.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.yagay.supjav.model.FeedKind
 import com.yagay.supjav.model.VideoItem
 
-/** Shows the actual video cards from the source page, not fabricated titles. */
+/**
+ * Compact poster-only queue. Like the source page: three portrait columns,
+ * overlaid code, and no repeated title beneath each image.
+ */
 @Composable
 fun PlayerPlaylistSheet(
     videos: List<VideoItem>,
     activeVideoId: String?,
+    sourceKind: FeedKind?,
+    paging: Boolean,
+    endReached: Boolean,
+    pagingError: String?,
+    onLoadMore: () -> Unit,
     switchingVideoId: String?,
     error: String?,
     onSelect: (VideoItem) -> Unit,
     onDismiss: () -> Unit
 ) {
     val activeIndex = videos.indexOfFirst { it.id == activeVideoId }
-    val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = activeIndex.coerceAtLeast(0)
+    val grid = rememberLazyGridState(
+        initialFirstVisibleItemIndex = (activeIndex.coerceAtLeast(0) / 3) * 3
     )
-    // Position the visible list on the playing video when the sheet opens.
-    // Also follow a genuine active-item change, without resetting on every recomposition.
-    LaunchedEffect(activeVideoId, videos) {
-        if (activeIndex >= 0) listState.scrollToItem(activeIndex)
+    // Anchor on the current item's ROW. Do not re-scroll when an extra page
+    // arrives: it must remain possible to browse farther down the list.
+    LaunchedEffect(activeVideoId) {
+        if (activeIndex >= 0) grid.scrollToItem((activeIndex / 3) * 3)
     }
+    val lastVisible by remember(grid) {
+        derivedStateOf { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+    }
+    LaunchedEffect(lastVisible, videos.size, paging, endReached, pagingError) {
+        if (lastVisible >= videos.size - 6 && videos.isNotEmpty() &&
+            !paging && !endReached && pagingError == null) {
+            onLoadMore()
+        }
+    }
+
     SupjavModalSheet("播放列表 · ${videos.size} 部", onDismiss = onDismiss) {
+        if (sourceKind != null) {
+            Text("来源：${sourceKind.title} · 向下滑动加载更多",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (videos.isEmpty()) {
-            Text("当前页面没有可用的作品列表",
+            Text("当前页面没有可用的作品",
                 style = MaterialTheme.typography.bodyMedium)
         } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                state = grid,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
                 contentPadding = PaddingValues(bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(videos, key = { it.id }) { video ->
-                    val isActive = video.id == activeVideoId
-                    val isSwitching = video.id == switchingVideoId
-                    val enabled = switchingVideoId == null && !isActive
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (isActive) MaterialTheme.colorScheme.secondaryContainer
-                                else MaterialTheme.colorScheme.surfaceContainer
+                    val active = video.id == activeVideoId
+                    val switching = video.id == switchingVideoId
+                    val shape = RoundedCornerShape(9.dp)
+                    Box(
+                        modifier = Modifier.fillMaxWidth().aspectRatio(0.72f)
+                            .clip(shape)
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .clickable(enabled = switchingVideoId == null && !active) {
+                                onSelect(video)
+                            }
+                            .border(
+                                width = if (active) 2.dp else 0.dp,
+                                color = if (active) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent,
+                                shape = shape
                             )
-                            .clickable(enabled = enabled) { onSelect(video) }
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         AsyncImage(
                             model = video.coverUrl.ifBlank { null },
                             contentDescription = video.title,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(width = 54.dp, height = 72.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                            modifier = Modifier.fillMaxSize()
                         )
-                        Column(modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                video.title,
-                                maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            if (video.code.isNotBlank()) {
-                                Text(video.code, style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (video.code.isNotBlank()) {
+                            Surface(
+                                modifier = Modifier.align(Alignment.BottomStart).padding(5.dp),
+                                color = Color.Black.copy(alpha = .76f),
+                                shape = RoundedCornerShape(5.dp)
+                            ) {
+                                Text(
+                                    video.code.take(30),
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
                             }
-                            if (isActive) {
-                                Text("正在播放", color = MaterialTheme.colorScheme.primary,
+                        }
+                        if (active) {
+                            Surface(
+                                modifier = Modifier.align(Alignment.TopStart).padding(5.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(5.dp)
+                            ) {
+                                Text("播放中", modifier = Modifier.padding(
+                                    horizontal = 5.dp, vertical = 2.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
                                     style = MaterialTheme.typography.labelSmall)
                             }
                         }
-                        when {
-                            isSwitching -> CircularProgressIndicator(
-                                Modifier.size(22.dp), strokeWidth = 2.dp)
-                            isActive -> Icon(Icons.Outlined.CheckCircle,
-                                contentDescription = "当前作品",
-                                tint = MaterialTheme.colorScheme.primary)
+                        if (switching) {
+                            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .5f)),
+                                contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(
+                                    Modifier.size(25.dp), color = Color.White, strokeWidth = 2.dp)
+                            }
+                        }
+                    }
+                }
+                if (!endReached || paging || pagingError != null) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center) {
+                            when {
+                                paging -> CircularProgressIndicator(Modifier.size(24.dp))
+                                pagingError != null -> TextButton(onClick = onLoadMore) {
+                                    Text("加载失败 · 点击重试")
+                                }
+                                !endReached -> TextButton(onClick = onLoadMore) {
+                                    Text("加载更多")
+                                }
+                            }
                         }
                     }
                 }
             }
         }
         if (switchingVideoId != null) {
-            Text("正在解析所选作品，成功后自动切换；当前视频保持不变。",
+            Text("正在切换作品，原视频保持播放",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
