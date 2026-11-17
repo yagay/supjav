@@ -60,7 +60,9 @@ class WebMediaPlaybackService : Service() {
                 override fun onSeekTo(pos: Long) = app.webPlayback.seekFromSystem(pos)
                 override fun onFastForward() = app.webPlayback.skipFromSystem(10)
                 override fun onRewind() = app.webPlayback.skipFromSystem(-10)
-                override fun onStop() = app.webPlayback.close()
+                // STOP must not orphan a still-visible HLS element. A full
+                // session close belongs to UI navigation or source handoff.
+                override fun onStop() = app.webPlayback.pauseFromSystem()
             }, Handler(Looper.getMainLooper()))
             isActive = true
         }
@@ -98,13 +100,16 @@ class WebMediaPlaybackService : Service() {
         val length = app.webPlayback.durationMs.coerceAtLeast(0L)
         val actions = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
             PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SEEK_TO or
-            PlaybackState.ACTION_REWIND or PlaybackState.ACTION_FAST_FORWARD or
-            PlaybackState.ACTION_STOP
-        session.setMetadata(MediaMetadata.Builder()
+            PlaybackState.ACTION_REWIND or PlaybackState.ACTION_FAST_FORWARD
+        val metadata = MediaMetadata.Builder()
             .putString(MediaMetadata.METADATA_KEY_TITLE, video.title.take(150))
             .putString(MediaMetadata.METADATA_KEY_ARTIST, "Supjav · HLS")
             .putLong(MediaMetadata.METADATA_KEY_DURATION, length)
-            .build())
+        if (video.coverUrl.startsWith("https://")) {
+            // Expose only the public cover link, never a signed media URL.
+            metadata.putString(MediaMetadata.METADATA_KEY_ART_URI, video.coverUrl)
+        }
+        session.setMetadata(metadata.build())
         session.setPlaybackState(PlaybackState.Builder()
             .setActions(actions)
             .setState(if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
