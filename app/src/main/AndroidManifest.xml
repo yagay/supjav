@@ -16,6 +16,11 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Separate media card for the actual WebView HLS renderer.
+             Media3 owns its own session and is stopped before Web HLS starts. -->
+        <service android:name=".player.WebMediaPlaybackService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
         <service android:name=".player.PlaybackService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="true">

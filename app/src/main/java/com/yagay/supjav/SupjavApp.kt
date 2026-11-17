@@ -19,7 +19,7 @@ class SupjavApp : Application() {
     val searchStore by lazy { SearchStore(this) }
     val categoryStore by lazy { CategoryStore(this) }
     val playerEngine by lazy { PlaybackEngine(this, library) }
-    val webPlayback by lazy { WebPlaybackSession(library) }
+    val webPlayback by lazy { WebPlaybackSession(this, library) }
     val preferences by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
 
     override fun onCreate() {
