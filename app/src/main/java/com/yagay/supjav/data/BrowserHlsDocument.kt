@@ -242,13 +242,41 @@ internal object BrowserHlsDocument {
                     state('manifest');
                     video.play().catch(function(){state('tap-play');message('请点击播放');});
                   });
+                  var networkRecoveries=0,mediaRecoveries=0;
                   player.on(Hls.Events.ERROR,function(event,error){
                     if(!error||!error.fatal)return;
                     var status=(error.response&&error.response.code)||0;
+                    // Never repeat authentication, forbidden, or missing media.
+                    // Transient connectivity and decode failures have small,
+                    // bounded recovery budgets, not an endless retry loop.
+                    if(error.type===Hls.ErrorTypes.NETWORK_ERROR &&
+                       status!==401 && status!==403 && status!==404 &&
+                       networkRecoveries<2){
+                      networkRecoveries++;
+                      state('network-retry');
+                      message('网络中断，正在恢复播放…');
+                      player.startLoad();
+                      return;
+                    }
+                    if(error.type===Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries<1){
+                      mediaRecoveries++;
+                      state('media-recovery');
+                      message('正在恢复视频解码…');
+                      player.recoverMediaError();
+                      return;
+                    }
                     var code=status===403?'http-403':status===404?'http-404':'fatal-error';
                     state(code);spinner.classList.add('hide');
                     message(status===403?'媒体服务器拒绝播放 (403)':status===404?'播放地址已失效':'HLS 播放失败');
                     player.destroy();
+                    player=null;
+                  });
+                  window.addEventListener('online',function(){
+                    if(player && networkRecoveries<2 && !video.ended){
+                      networkRecoveries++;
+                      state('network-online');
+                      player.startLoad();
+                    }
                   });
                   player.attachMedia(video);
                 }else if(video.canPlayType('application/vnd.apple.mpegurl')){
