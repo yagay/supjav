@@ -18,7 +18,9 @@ data class VideoDetail(
     val tags: List<String>,
     val actors: List<String>,
     val servers: List<VideoServer>,
-    val related: List<VideoItem>
+    val related: List<VideoItem>,
+    val categories: List<String> = emptyList(),
+    val makers: List<String> = emptyList()
 )
 
 enum class FeedKind(val title: String) {

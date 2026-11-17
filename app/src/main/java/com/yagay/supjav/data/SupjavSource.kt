@@ -112,6 +112,12 @@ class SupjavSource {
         }?.let { resolveUrl(video.detailUrl, it) }.orEmpty().ifBlank { video.coverUrl }
         val tags = doc.select("a[href*=/tag/]").map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
         val actors = doc.select("a[href*=/category/cast/]").map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
+        val makers = doc.select("a[href*=/category/maker/]").map { it.text().trim() }
+            .filter { it.isNotEmpty() }.distinct()
+        val categories = doc.select("a[href*=/category/]")
+            .filterNot { it.attr("href").contains("/category/cast/") ||
+                it.attr("href").contains("/category/maker/") }
+            .map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
         val servers = doc.select(".btn-server[data-link]").mapIndexed { index, el ->
             VideoServer(index.toString(), el.text().ifBlank { "Server " + (index + 1) },
                 el.attr("data-link"), video.detailUrl)
@@ -127,7 +133,7 @@ class SupjavSource {
             .orEmpty().take(1200)
         Diagnostics.log("DETAIL id=" + video.id + " servers=" + servers.size)
         VideoDetail(video.copy(title = title, coverUrl = cover, tags = tags, actors = actors),
-            description, tags, actors, servers, related)
+            description, tags, actors, servers, related, categories, makers)
     }
 
 
