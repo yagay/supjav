@@ -312,7 +312,7 @@ private fun Root(
                         onWebFallback = webFallback?.let { candidate ->
                             {
                                 app.playerEngine.stop()
-                                activeVideo?.let(app.webPlayback::begin)
+                                activeVideo?.let { app.webPlayback.begin(it) }
                                 showPlayer = false
                                 webServer = candidate
                                 Diagnostics.log("NATIVE_FAILED_RETURN_TO_WEB line=" + candidate.name)
