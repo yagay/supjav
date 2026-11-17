@@ -110,6 +110,8 @@ fun ScriptPlayerScreen(
             val handler = remember { Handler(Looper.getMainLooper()) }
             val alive = remember { AtomicBoolean(true) }
             val selected = remember { AtomicBoolean(false) }
+            val reportedOrigins = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
+            val reportedFrames = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
             fun offer(source: PlaybackSource, method: String) {
                 handler.post {
                     if (!alive.get() || !selected.get()) return@post
@@ -174,13 +176,32 @@ fun ScriptPlayerScreen(
                                 }.getOrNull() ?: return@addWebMessageListener
                                 val document = obj.optString("page").take(4096)
                                 val claimedOrigin = sourceOrigin.toString()
+                                val documentHost = Uri.parse(document).host.orEmpty()
                                 if (MediaSourceDetector.origin(document) !=
                                     MediaSourceDetector.origin(claimedOrigin)) {
                                     return@addWebMessageListener
                                 }
+                                val docRef = obj.optString("ref")
+                                val admitted = session.admitDocument(document, docRef)
+                                if (reportedOrigins.add(documentHost)) {
+                                    Diagnostics.log("WEB_FRAME_REPORT host=" + documentHost +
+                                        " refHost=" + Uri.parse(docRef).host +
+                                        " admitted=" + admitted)
+                                }
                                 val child = obj.optString("frame")
-                                if (child.isNotEmpty()) session.trustFrame(document, child)
+                                if (child.isNotEmpty()) {
+                                    val frameHost = Uri.parse(child).host.orEmpty()
+                                    val trusted = session.trustFrame(document, child)
+                                    if (reportedFrames.add(documentHost + ">" + frameHost)) {
+                                        Diagnostics.log("WEB_FRAME_CHILD from=" + documentHost +
+                                            " to=" + frameHost + " trusted=" + trusted)
+                                    }
+                                }
                                 val media = obj.optJSONArray("media") ?: return@addWebMessageListener
+                                if (media.length() > 0) {
+                                    Diagnostics.log("WEB_MEDIA_DECLARED host=" + documentHost +
+                                        " count=" + media.length())
+                                }
                                 for (i in 0 until minOf(media.length(), 12)) {
                                     val source = session.fromPageReport(
                                         claimedOrigin, document, media.optString(i)
@@ -222,6 +243,7 @@ fun ScriptPlayerScreen(
                                         try {
                                             SupjavMediaProbe.postMessage(JSON.stringify({
                                                 page: location.href,
+                                                ref: document.referrer || '',
                                                 frame: f && f.src || '',
                                                 media: media.slice(0, 12)
                                             }));
@@ -236,6 +258,45 @@ fun ScriptPlayerScreen(
                             Diagnostics.log("WEB_FRAME_REPORT_UNAVAILABLE")
                         }
 
+                        val rootProbe = object : Runnable {
+                            var attempts = 0
+                            override fun run() {
+                                if (!alive.get()) return
+                                if (selected.get()) {
+                                    evaluateJavascript("""
+                                        (function() {
+                                            var frames = document.querySelectorAll('iframe[src]');
+                                            var selected = document.querySelector(
+                                                'iframe#video, #player-wrap iframe[src], iframe#player');
+                                            return JSON.stringify({
+                                                count: frames.length,
+                                                frame: selected && selected.src || ''
+                                            });
+                                        })()
+                                    """.trimIndent()) { raw ->
+                                        val obj = runCatching {
+                                            JSONObject(org.json.JSONTokener(raw).nextValue() as String)
+                                        }.getOrNull()
+                                        if (obj != null) {
+                                            val frame = obj.optString("frame")
+                                            val host = Uri.parse(frame).host.orEmpty()
+                                            val trusted = if (frame.isNotBlank())
+                                                session.trustFrame(server.detailUrl, frame) else false
+                                            if (attempts < 4 || (host.isNotBlank() &&
+                                                    reportedFrames.add("root>" + host))) {
+                                                Diagnostics.log("WEB_ROOT_PROBE line=" + server.name +
+                                                    " frames=" + obj.optInt("count") +
+                                                    " playerHost=" + host +
+                                                    " trusted=" + trusted)
+                                            }
+                                            attempts++
+                                        }
+                                    }
+                                }
+                                if (attempts < 14) postDelayed(this, 1300)
+                            }
+                        }
+                        postDelayed(rootProbe, 1000)
                         val tokenJson = JSONObject.quote(server.link)
                         val expectedIndex = server.id.toIntOrNull() ?: -1
                         webChromeClient = object : WebChromeClient() {}
@@ -304,6 +365,7 @@ fun ScriptPlayerScreen(
                                         " state=" + resultCode +
                                         " chars=" + server.link.length)
                                     selected.set(resultCode.startsWith("SELECTED"))
+                                    Diagnostics.log("WEB_LINE_SCRIPT_RESULT " + resultCode)
                                     status = when {
                                         resultCode.startsWith("SELECTED") ->
                                             "已切换网站线路，正在识别视频源"
