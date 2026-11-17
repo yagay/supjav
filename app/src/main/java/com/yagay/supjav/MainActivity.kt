@@ -253,21 +253,38 @@ private fun Root(
         showPlayer = false
         showSettings = false
     }
+    // A Back press must always change the top-most visible UI state.
+    // The pending resolver is cancellable; never swallow Back while switching.
+    fun cancelPendingSourceSwitch() {
+        if (switchingLine != null) {
+            Diagnostics.log("NAV_BACK_CANCEL_SOURCE_SWITCH")
+            lineSwitchJob?.cancel()
+            lineSwitchJob = null
+            switchingLine = null
+            lineSwitchError = null
+        }
+    }
     val back: () -> Unit = {
         when {
             partPickerOpen -> {
-                if (switchingLine == null) partPickerOpen = false
+                cancelPendingSourceSwitch()
+                partPickerOpen = false
+                Diagnostics.log("NAV_BACK_CLOSE_PART_PICKER")
             }
             linePickerOpen -> {
-                // Never navigate away from the active player while a switch
-                // transaction is still resolving.
-                if (switchingLine == null) linePickerOpen = false
+                cancelPendingSourceSwitch()
+                linePickerOpen = false
+                Diagnostics.log("NAV_BACK_CLOSE_LINE_PICKER")
             }
-            showSettings -> showSettings = false
+            showSettings -> {
+                showSettings = false
+                Diagnostics.log("NAV_BACK_CLOSE_SETTINGS")
+            }
             webServer != null -> {
                 app.webPlayback.close()
                 embeddedHlsActive = false
                 webServer = null
+                Diagnostics.log("NAV_BACK_LEAVE_WEB_PLAYER")
             }
             showPlayer -> {
                 // Returning from the video screen must pause the Media3 engine;
@@ -280,11 +297,19 @@ private fun Root(
                     ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                 showPlayer = false
             }
-            routes.isNotEmpty() -> { routes.removeAt(routes.lastIndex); libraryRevision++ }
-            activeSearchValue.isNotBlank() -> clearSearch()
+            routes.isNotEmpty() -> {
+                routes.removeAt(routes.lastIndex)
+                libraryRevision++
+                Diagnostics.log("NAV_BACK_LEAVE_DETAIL")
+            }
+            activeSearchValue.isNotBlank() -> {
+                clearSearch()
+                Diagnostics.log("NAV_BACK_CLEAR_SEARCH")
+            }
             tab != SupjavTab.RECOMMEND -> {
                 clearSearch()
                 tab = SupjavTab.RECOMMEND
+                Diagnostics.log("NAV_BACK_TO_RECOMMEND")
             }
         }
     }
@@ -451,7 +476,10 @@ private fun Root(
                                     app = app, onVideo = onOpen,
                                     initialKind = targetCategoryKind,
                                     initialPath = targetCategoryPath,
-                                    directoryFilter = searchInput
+                                    directoryFilter = searchInput,
+                                    backEnabled = routes.isEmpty() && !showPlayer &&
+                                        webServer == null && !showSettings &&
+                                        !linePickerOpen && !partPickerOpen
                                 )
                                 SupjavTab.RANK -> RankPage(app, onOpen)
                                 SupjavTab.MINE -> MinePage(
@@ -622,7 +650,11 @@ private fun Root(
         if (partPickerOpen && activeVideo != null) {
             SupjavModalSheet(
                 "选择视频分段",
-                onDismiss = { if (switchingLine == null) partPickerOpen = false }
+                onDismiss = {
+                    cancelPendingSourceSwitch()
+                    partPickerOpen = false
+                    Diagnostics.log("NAV_BACK_DISMISS_PART_SHEET")
+                }
             ) {
                 val parts = VideoParts.available(availableServers)
                 if (parts.size < 2) {
@@ -658,7 +690,11 @@ private fun Root(
         if (linePickerOpen && activeVideo != null) {
             SupjavModalSheet(
                 "切换播放线路",
-                onDismiss = { if (switchingLine == null) linePickerOpen = false }
+                onDismiss = {
+                    cancelPendingSourceSwitch()
+                    linePickerOpen = false
+                    Diagnostics.log("NAV_BACK_DISMISS_LINE_SHEET")
+                }
             ) {
                 if (availableServers.isEmpty()) {
                     Text("当前作品还没有加载到播放线路，请返回详情刷新。")
