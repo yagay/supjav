@@ -383,7 +383,7 @@ fun DetailScreen(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(d.related, key = { it.id }) { item ->
                         VideoTile(item, {
-                            onPlaylistCaptured(d.related)
+                            onPlaylistCaptured(d.related, null)
                             onVideo(item)
                         }, Modifier.width(144.dp))
                     }
