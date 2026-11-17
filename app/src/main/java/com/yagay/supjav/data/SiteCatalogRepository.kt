@@ -4,6 +4,8 @@ import android.os.SystemClock
 import com.yagay.supjav.model.FeedKind
 import com.yagay.supjav.model.VideoDetail
 import com.yagay.supjav.model.VideoItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -30,16 +32,20 @@ class SiteCatalogRepository(
         if (!force && cached != null && lastDepth >= depth &&
             now - lastScanAt in 0 until directoryTtlMs) return@withLock cached
         val scan = source.browseDirectory(depth)
-        if (scan.options.isNotEmpty()) categories.save(scan.options)
+        if (scan.options.isNotEmpty()) {
+            withContext(Dispatchers.IO) { categories.save(scan.options) }
+        }
         lastScan = scan
         lastDepth = depth
         lastScanAt = now
         scan
     }
 
-    fun directoryMatches(kind: FeedKind, input: String): List<SupjavSource.BrowseOption> {
+    fun directoryMatches(
+        entries: List<SupjavSource.BrowseOption>, kind: FeedKind, input: String
+    ): List<SupjavSource.BrowseOption> {
         val query = input.trim()
-        return categories.snapshot().asSequence()
+        return entries.asSequence()
             .filter { it.kind == kind }
             .filter {
                 query.isBlank() ||
@@ -57,11 +63,13 @@ class SiteCatalogRepository(
     suspend fun detail(video: VideoItem): VideoDetail {
         val detail = source.detail(video)
         if (detail.taxonomy.isNotEmpty()) {
-            categories.save(detail.taxonomy.map {
-                SupjavSource.BrowseOption(
-                    it.kind, it.path.substringAfterLast('/'), it.label, it.path
-                )
-            })
+            withContext(Dispatchers.IO) {
+                categories.save(detail.taxonomy.map {
+                    SupjavSource.BrowseOption(
+                        it.kind, it.path.substringAfterLast('/'), it.label, it.path
+                    )
+                })
+            }
         }
         return detail
     }

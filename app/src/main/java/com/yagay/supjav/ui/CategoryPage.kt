@@ -174,7 +174,7 @@ fun CategoryPage(
             }
         }
         val results = remember(directory, chosenKind, directoryFilter) {
-            app.catalog.directoryMatches(chosenKind, directoryFilter)
+            app.catalog.directoryMatches(directory, chosenKind, directoryFilter)
                 .sortedWith(compareBy({ it.label.lowercase() }, { it.path }))
         }
         fun initialOf(label: String): String {
