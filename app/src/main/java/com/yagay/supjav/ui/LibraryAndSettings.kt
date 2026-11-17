@@ -93,6 +93,9 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
     var showPip by remember { mutableStateOf(prefs.getBoolean("manual_pip", true)) }
     var confirmClear by remember { mutableStateOf(false) }
     var logError by remember { mutableStateOf<String?>(null) }
+    var showLogs by remember { mutableStateOf(false) }
+    var logPreview by remember { mutableStateOf("") }
+    var confirmClearLogs by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -162,6 +165,35 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    if (showLogs) AlertDialog(
+        onDismissRequest = { showLogs = false },
+        title = { Text("最近诊断事件") },
+        text = {
+            Text(logPreview, Modifier.heightIn(max = 420.dp)
+                .verticalScroll(rememberScrollState()),
+                style = MaterialTheme.typography.bodySmall)
+        },
+        confirmButton = { TextButton(onClick = { showLogs = false }) { Text("关闭") } },
+        dismissButton = {
+            TextButton(onClick = {
+                showLogs = false
+                runCatching { Diagnostics.share(context) }
+                    .onFailure { logError = it.message ?: "导出日志失败" }
+            }) { Text("导出 ZIP") }
+        }
+    )
+    if (confirmClearLogs) AlertDialog(
+        onDismissRequest = { confirmClearLogs = false },
+        title = { Text("清除诊断日志？") },
+        text = { Text("将删除 App 保存的诊断事件，但不会清空收藏和播放历史。") },
+        confirmButton = {
+            TextButton(onClick = {
+                Diagnostics.clear()
+                confirmClearLogs = false
+            }) { Text("清除") }
+        },
+        dismissButton = { TextButton(onClick = { confirmClearLogs = false }) { Text("取消") } }
+    )
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
         title = { Text("清空所有播放历史？") },
