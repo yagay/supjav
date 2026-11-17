@@ -2,6 +2,8 @@ package com.yagay.supjav.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -10,6 +12,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
@@ -24,6 +28,8 @@ import com.yagay.supjav.data.SupjavSource
 import com.yagay.supjav.model.FeedKind
 import com.yagay.supjav.model.VideoItem
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Category index reads actual site links, not a guessed list of category labels. */
 @Composable
@@ -33,7 +39,9 @@ fun CategoryPage(
     initialKind: FeedKind? = null,
     initialPath: String = ""
 ) {
-    var directory by remember { mutableStateOf<List<SupjavSource.BrowseOption>>(emptyList()) }
+    var directory by remember { mutableStateOf(app.categoryStore.snapshot()) }
+    var pinned by remember { mutableStateOf(app.categoryStore.pins().toSet()) }
+    var visited by remember { mutableStateOf(app.categoryStore.recent()) }
     var fetching by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -49,13 +57,19 @@ fun CategoryPage(
             selectedPath = initialPath
             selectedTitle = initialPath.substringAfterLast('/').replace('-', ' ')
             chosenKind = initialKind
+            app.categoryStore.markVisited(initialPath)
+            visited = app.categoryStore.recent()
         }
     }
     LaunchedEffect(app, reload) {
         fetching = true
         fetchError = null
         try {
-            directory = app.source.browseOptions()
+            val found = app.source.browseOptions()
+            if (found.isNotEmpty()) {
+                directory = found
+                withContext(Dispatchers.IO) { app.categoryStore.save(found) }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -124,6 +138,30 @@ fun CategoryPage(
                     )
                 }
         }
+        val shortcuts = directory.filter { it.path in pinned || it.path in visited }
+            .distinctBy { it.path }.take(20)
+        if (shortcuts.isNotEmpty()) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SupjavSectionTitle("常用与最近", "长按或点星标可收藏常用分类")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rowItems(shortcuts, key = { it.path }) { option ->
+                        AssistChip(
+                            onClick = {
+                                selectedKind = option.kind
+                                selectedPath = option.path
+                                selectedTitle = option.label
+                                app.categoryStore.markVisited(option.path)
+                                visited = app.categoryStore.recent()
+                            },
+                            label = { Text(option.label, maxLines = 1) }
+                        )
+                    }
+                }
+            }
+        }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -137,14 +175,20 @@ fun CategoryPage(
         }
         if (fetching) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (fetchError != null) {
-            SupjavEmptyState(fetchError.orEmpty(), onRetry = { reload++ })
+            Text(
+                "网站分类更新失败：" + fetchError.orEmpty() +
+                    if (directory.isNotEmpty()) "（已显示上次成功获取的分类）" else "",
+                Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         val results = directory.filter {
             it.kind == chosenKind &&
                 (filter.isBlank() || it.label.contains(filter.trim(), ignoreCase = true) ||
                     it.path.contains(filter.trim(), ignoreCase = true))
         }
-        if (!fetching && fetchError == null && results.isEmpty()) {
+        if (!fetching && results.isEmpty()) {
             SupjavEmptyState(if (directory.isEmpty()) {
                 "网站尚未返回目录。当前可能存在访问限制。"
             } else "这一类暂无可用目录项，可以切换其他分类。")
@@ -162,6 +206,8 @@ fun CategoryPage(
                         selectedKind = option.kind
                         selectedPath = option.path
                         selectedTitle = option.label
+                        app.categoryStore.markVisited(option.path)
+                        visited = app.categoryStore.recent()
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -173,8 +219,26 @@ fun CategoryPage(
                         Icon(Icons.Outlined.Category, null, Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.primary)
                         Text(option.label,
+                            modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        IconButton(
+                            onClick = {
+                                app.categoryStore.togglePin(option.path)
+                                pinned = app.categoryStore.pins().toSet()
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                if (option.path in pinned) Icons.Filled.Star
+                                    else Icons.Outlined.Star,
+                                contentDescription = if (option.path in pinned) "取消常用分类" else "收藏分类",
+                                tint = if (option.path in pinned)
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
                     }
                 }
             }
