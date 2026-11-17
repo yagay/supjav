@@ -47,7 +47,7 @@ fun MyHubScreen(
         when (section) {
             0 -> LibraryScreen(app, onVideo, initialFavorites = true, showTabs = false)
             1 -> LibraryScreen(app, onVideo, initialFavorites = false, showTabs = false)
-            else -> SettingsScreen(app, dark, onDarkChange)
+            else -> SettingsScreen(app, dark, onDarkChange, onExit = { section = 0 })
         }
     }
 }
