@@ -3,7 +3,6 @@ package com.yagay.supjav.ui
 import android.content.Intent
 import android.content.res.Configuration
 import android.app.Activity
-import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.horizontalScroll
 import android.content.pm.ActivityInfo
@@ -480,13 +479,8 @@ fun PlayerScreen(
             controlsVisible = false
         }
     }
-    BackHandler(enabled = landscape && !pip) {
-        // The first system Back in landscape returns to portrait but must
-        // still pause playback, just like leaving the player from portrait.
-        player.pause()
-        engine.savePosition()
-        (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-    }
+    // System Back is handled by Root for both orientations. The explicit
+    // fullscreen control remains the only orientation-only action.
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
