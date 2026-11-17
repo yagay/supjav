@@ -91,6 +91,35 @@ class MediaSourceDetectorTest {
             "https://cdn.example.com/hls3/master.txt"))
     }
 
+    @Test fun selectedRedirectAdmitsEvsAndLucWithoutTrustingAds() {
+        val wrapper = "https://lk1.supremejav.com/supjav.php?c=abcdef"
+        for (playerHost in listOf("evsishere.xyz", "luminscdn.xyz")) {
+            val player = "https://" + playerHost + "/e/confirmed"
+            val session = SelectedMediaSession(site, wrapper, player)
+            val media = "https://cdn.example.com/hls3/master.txt?token=abc"
+            // Some browsers report the site as document.referrer after a
+            // gateway-level redirect, so identity must come from that redirect.
+            assertTrue(session.admitDocument(player, site))
+            assertNotNull(session.fromPageReport(
+                "https://" + playerHost, player, media))
+            assertNull(session.fromPageReport(
+                "https://cdn.storagexhd.com",
+                "https://cdn.storagexhd.com/e/advert", media))
+            assertNull(session.fromNetworkRequest(media,
+                "https://r.trackwilltrk.com/e/ad"))
+        }
+    }
+
+    @Test fun unverifiedRedirectNeverTrustsRandomDomain() {
+        val session = SelectedMediaSession(site)
+        assertFalse(session.admitDocument(
+            "https://luminscdn.xyz/e/player", site))
+        assertNull(session.fromPageReport(
+            "https://luminscdn.xyz",
+            "https://luminscdn.xyz/e/player",
+            "https://cdn.example.com/hls3/master.txt"))
+    }
+
     @Test fun wrongFrameOriginAndHttpSubframesRejected() {
         val session = SelectedMediaSession(site)
         assertFalse(session.trustFrame(

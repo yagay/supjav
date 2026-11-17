@@ -110,6 +110,16 @@ class SupjavServerAdaptersTest {
         assertEquals(listOf("https://evsishere.xyz/e/real"), result.nextPages)
     }
 
+    @Test fun multiplePackedScriptsDoNotHideSelectedHlsSource() {
+        val junk = "eval(function(p,a,c,k,e,d){}('0=1',10,2,'var|noise'.split('|')))"
+        val source = "https://media.example.com/hls3/master.txt?token=signed"
+        val good = "eval(function(p,a,c,k,e,d){}('0=\\"1\\"',10,2,'source|" + source + "'.split('|')))"
+        val html = "<script>" + junk + "</script><script>" + good + "</script>"
+        val result = SupjavServerAdapters.extract(
+            SupjavLine.EVS, html, "https://evsishere.xyz/e/current")
+        assertEquals(source, result.candidates.firstOrNull()?.url)
+    }
+
     @Test fun packerDictionaryCanBeReadWithoutEvaluatingJs() {
         val input = "eval(function(p,a,c,k,e,d){}('0 1 2',10,3,'var|source|https'.split('|')))"
         assertEquals("var source https", SupjavServerAdapters.unpackPacker(input))

@@ -121,11 +121,6 @@ fun ScriptPlayerScreen(
             val reportedOrigins = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
             val reportedFrames = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
             val reportedMedia = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
-            if (server.verifiedPlayerUrl != null) {
-                // The entire signed URL stays in memory; logs contain only host.
-                Diagnostics.log("WEB_VERIFIED_PLAYER host=" +
-                    Uri.parse(server.verifiedPlayerUrl).host)
-            }
             fun offer(source: PlaybackSource, method: String) {
                 handler.post {
                     if (!alive.get() || !selected.get()) return@post
@@ -487,6 +482,10 @@ fun ScriptPlayerScreen(
                                     " main=" + request.isForMainFrame +
                                     " host=" + request.url.host)
                             }
+                        }
+                        if (server.verifiedPlayerUrl != null) {
+                            Diagnostics.log("WEB_VERIFIED_PLAYER line=" + server.name +
+                                " host=" + Uri.parse(server.verifiedPlayerUrl).host)
                         }
                         Diagnostics.log("WEB_PLAYER_OPEN line=" + server.name +
                             " tokenChars=" + server.link.length +
