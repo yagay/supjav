@@ -178,6 +178,7 @@ class PlaybackResolver(private val source: SupjavSource) {
                 }
                 Diagnostics.log("RESOLVE_ADAPTER line=" + line.name +
                     " candidates=" + candidates.size + " frames=" + result.nextPages.size +
+                    " variants=" + result.candidateTags.values.distinct().joinToString(",") +
                     " hop=" + pages)
                 for (candidate in candidates.distinctBy { it.url }.take(6)) {
                     if (probes >= 16) break
@@ -185,10 +186,12 @@ class PlaybackResolver(private val source: SupjavSource) {
                         candidate.mimeType == "application/x-mpegURL")
                     probes++
                     Diagnostics.log("RESOLVE_PROBE line=" + line.name +
+                        " variant=" + (result.candidateTags[candidate.url] ?: "other") +
                         " status=" + check.status + " kind=" + check.reason +
                         " host=" + URI(candidate.url).host)
                     if (check.playable) {
                         Diagnostics.log("RESOLVE_NATIVE_READY line=" + line.name +
+                            " variant=" + (result.candidateTags[candidate.url] ?: "other") +
                             " type=" + candidate.mimeType +
                             " via=adapter")
                         return@withContext ResolveResult.Playable(
