@@ -5,6 +5,7 @@ import com.yagay.supjav.util.Diagnostics
 import java.io.IOException
 import java.net.URI
 import java.net.URLEncoder
+import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -129,6 +130,40 @@ class SupjavSource {
             description, tags, actors, servers, related)
     }
 
+
+    data class BrowseOption(val kind: FeedKind, val value: String, val label: String)
+
+    /** Menu items are fetched from the live site, never hardcoded fake categories. */
+    suspend fun browseOptions(): List<BrowseOption> = withContext(Dispatchers.IO) {
+        parseBrowseOptions(fetch(BASE + "/"))
+    }
+
+    fun parseBrowseOptions(html: String): List<BrowseOption> {
+        val doc = Jsoup.parse(html, BASE)
+        return doc.select("nav a[href], .menu a[href], .category-list a[href], .categories a[href]")
+            .mapNotNull { element ->
+                val uri = runCatching { URI(element.absUrl("href")) }.getOrNull()
+                    ?: return@mapNotNull null
+                if (uri.host != "supjav.com" && uri.host != "www.supjav.com") return@mapNotNull null
+                val path = uri.path.orEmpty().trim('/')
+                val info = when {
+                    path.startsWith("category/cast/") ->
+                        FeedKind.ACTOR to path.removePrefix("category/cast/")
+                    path.startsWith("category/maker/") ->
+                        FeedKind.MAKER to path.removePrefix("category/maker/")
+                    path.startsWith("category/") ->
+                        FeedKind.CATEGORY to path.removePrefix("category/")
+                    path.startsWith("tag/") -> FeedKind.TAG to path.removePrefix("tag/")
+                    else -> return@mapNotNull null
+                }
+                val raw = info.second.trim('/').substringBefore('/')
+                if (raw.isBlank() || raw == "page") return@mapNotNull null
+                val label = element.text().trim().take(36).ifBlank {
+                    runCatching { URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+                }
+                BrowseOption(info.first, raw, label)
+            }.distinctBy { it.kind to it.value }.take(80)
+    }
     fun resolveUrl(base: String, raw: String): String = try {
         if (raw.isBlank() || raw.startsWith("data:")) "" else URI(base).resolve(raw.trim()).toString()
     } catch (_: Exception) { "" }
