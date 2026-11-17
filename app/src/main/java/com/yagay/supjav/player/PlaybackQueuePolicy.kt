@@ -13,6 +13,13 @@ object PlaybackQueuePolicy {
         } else page
     }
 
+    /** Adjacent works, not next mirror or CD segment. */
+    fun adjacent(items: List<VideoItem>, playingId: String?, direction: Int): VideoItem? {
+        if (direction != -1 && direction != 1) return null
+        val index = items.indexOfFirst { it.id == playingId }
+        return if (index < 0) null else items.getOrNull(index + direction)
+    }
+
     /** Start with the first actual CD, then the user's preferred host. */
     fun startingServers(
         servers: List<VideoServer>, preferredLine: String?
