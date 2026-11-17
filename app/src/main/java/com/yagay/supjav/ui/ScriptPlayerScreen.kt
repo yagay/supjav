@@ -47,7 +47,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Composable
 fun ScriptPlayerScreen(
     server: VideoServer,
-    onNativePlay: (PlaybackSource) -> Unit
+    onNativePlay: (PlaybackSource) -> Unit,
+    onEmbeddedHlsChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     var status by remember(server.id, server.link) { mutableStateOf("正在载入网站播放器") }
@@ -59,7 +60,30 @@ fun ScriptPlayerScreen(
     }
     var useEmbeddedHls by remember(server.id, server.link) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val reportEmbeddedMode by rememberUpdatedState(onEmbeddedHlsChanged)
 
+    LaunchedEffect(useEmbeddedHls) {
+        reportEmbeddedMode(useEmbeddedHls)
+    }
+    DisposableEffect(server.link) {
+        onDispose { reportEmbeddedMode(false) }
+    }
+    androidx.activity.compose.BackHandler(enabled = useEmbeddedHls) {
+        useEmbeddedHls = false
+        reload++
+    }
+
+    if (useEmbeddedHls && browserHlsSource != null) {
+        // Video and its mobile controls occupy the entire playback surface.
+        // No extra Compose status/refresh toolbar above the video.
+        EmbeddedHlsPlayer(
+            source = requireNotNull(browserHlsSource),
+            onWebsitePlayer = {
+                useEmbeddedHls = false
+                reload++
+            }
+        )
+    } else {
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
@@ -127,16 +151,7 @@ fun ScriptPlayerScreen(
                 Text("尝试内置 HLS 播放（不显示第三方播放器网页）")
             }
         }
-        if (useEmbeddedHls && browserHlsSource != null) {
-            EmbeddedHlsPlayer(
-                source = requireNotNull(browserHlsSource),
-                onWebsitePlayer = {
-                    useEmbeddedHls = false
-                    reload++
-                }
-            )
-        } else {
-            key(server.link, reload) {
+        key(server.link, reload) {
             val session = remember(server.link, server.verifiedPlayerUrl, reload) {
                 SelectedMediaSession(
                     server.detailUrl,
@@ -580,7 +595,7 @@ fun ScriptPlayerScreen(
                     }
                 }
             )
-            }
         }
+    }
     }
 }
