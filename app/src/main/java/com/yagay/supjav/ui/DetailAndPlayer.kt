@@ -399,7 +399,8 @@ fun PlayerScreen(
     }
     LaunchedEffect(player, pip) {
         while (true) {
-            if (!draggingSeek) position = player.currentPosition.coerceAtLeast(0)
+            if (!draggingSeek && !gestureScrubbing)
+                position = player.currentPosition.coerceAtLeast(0)
             duration = player.duration.coerceAtLeast(0)
             delay(350)
         }
@@ -582,8 +583,9 @@ fun PlayerScreen(
                         color = Color.White)
                 }
                 Slider(
-                    value = if (duration > 0L) (position.toFloat() / duration).coerceIn(0f, 1f)
-                        else 0f,
+                    value = if (duration > 0L)
+                        ((if (gestureScrubbing) gesturePositionMs else position).toFloat() /
+                            duration).coerceIn(0f, 1f) else 0f,
                     onValueChange = { fraction ->
                         if (duration > 0L) {
                             draggingSeek = true
