@@ -63,7 +63,8 @@ fun DetailScreen(
     onPlay: (VideoServer) -> Unit,
     onFilter: (FeedKind, String) -> Unit,
     onWebPlay: (VideoServer) -> Unit,
-    onServersUpdated: (List<VideoServer>) -> Unit = {}
+    onServersUpdated: (List<VideoServer>) -> Unit = {},
+    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
 ) {
     var detail by remember(video.id) { mutableStateOf<VideoDetail?>(null) }
     var error by remember(video.id) { mutableStateOf<String?>(null) }
@@ -381,7 +382,10 @@ fun DetailScreen(
                 SupjavSectionTitle("相关作品")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(d.related, key = { it.id }) { item ->
-                        VideoTile(item, { onVideo(item) }, Modifier.width(144.dp))
+                        VideoTile(item, {
+                            onPlaylistCaptured(d.related)
+                            onVideo(item)
+                        }, Modifier.width(144.dp))
                     }
                 }
             }
