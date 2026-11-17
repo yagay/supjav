@@ -656,7 +656,7 @@ fun PlayerScreen(
                         }
                 )
             }
-            if (!pip && isBuffering) {
+            if (!pip && isBuffering && !gestureScrubbing && gestureLevelKind == null) {
                 CircularProgressIndicator(
                     Modifier.align(Alignment.Center).size(26.dp),
                     strokeWidth = 2.dp, color = Color.White

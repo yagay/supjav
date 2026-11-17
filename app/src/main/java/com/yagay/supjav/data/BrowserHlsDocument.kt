@@ -45,6 +45,7 @@ internal object BrowserHlsDocument {
             *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
             html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Roboto,"Noto Sans",sans-serif}
             #player{position:relative;width:100%;height:100%;height:100dvh;overflow:hidden;background:#000}
+            #player.swiping #spinner,#player.swiping #pausedIndicator,#player.swiping #playFlash,#player.swiping #gestureFeedback,#player.swiping #hint{display:none!important}
             video{position:absolute;inset:0;width:100%;height:100%;object-fit:$playbackFit;background:#000}
             #gestures{position:absolute;inset:0;z-index:2;touch-action:none;user-select:none}
             #chrome{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:1;transition:opacity .22s ease}
@@ -463,8 +464,10 @@ internal object BrowserHlsDocument {
                 }
                 gestureSeek.hidden=true;
                 gestureLevel.hidden=true;
+                document.getElementById('player').classList.remove('swiping');
                 activeGesture=null;
                 restoreHold();
+                playbackIcon();
               }
               gestureLayer.addEventListener('pointerdown',function(e){
                 if(activeGesture || (e.pointerType==='mouse' && e.button!==0))return;
@@ -514,6 +517,7 @@ internal object BrowserHlsDocument {
                   }
                   if(g.mode){
                     clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
+                    document.getElementById('player').classList.add('swiping');
                     chromeVisible(false);
                   }
                 }

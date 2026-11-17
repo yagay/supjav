@@ -41,11 +41,15 @@ internal class PlayerSystemControls(private val activity: Activity) {
     fun setVolume(value: Float): Float {
         val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val safe = value.coerceIn(0f, 1f)
-        audio.setStreamVolume(
-            AudioManager.STREAM_MUSIC,
-            (safe * max).roundToInt().coerceIn(0, max),
-            0 // Don't display the system volume HUD over the video.
-        )
+        // Some devices restrict volume changes while Do Not Disturb is active.
+        // Leave playback running if Android rejects an adjustment.
+        runCatching {
+            audio.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                (safe * max).roundToInt().coerceIn(0, max),
+                0 // Don't display the system volume HUD over the video.
+            )
+        }
         return volume()
     }
 
