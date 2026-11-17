@@ -86,6 +86,32 @@ class PlaybackResolverTest {
         assertTrue(next is ResolveResult.Unavailable)
     }
 
+    @Test fun extensionlessHlsIsDetectedFromManifestNotSuffix() = runBlocking {
+        val fake = FakeGateway()
+        val manifest = "https://stream.example.com/media/playlist"
+        fake.pages[manifest] = GatewayPage(manifest, 200,
+            "application/vnd.apple.mpegurl",
+            "#EXTM3U\n#EXT-X-TARGETDURATION:10\n")
+        fake.probes[manifest] = MediaProbe(true, 200, manifest, "hls-ok")
+        val resolver = PlaybackResolver(SupjavSource())
+        resolver.gateway = fake
+        val result = resolver.resolve(VideoServer("0","EVS",manifest,detail))
+        assertTrue(result is ResolveResult.Playable)
+        assertEquals("application/x-mpegURL", (result as ResolveResult.Playable).source.mimeType)
+    }
+
+    @Test fun restrictedNativeSourceFallsBackWithoutPretendingToPlay() = runBlocking {
+        val fake = FakeGateway()
+        val iframe = "https://evsishere.xyz/e/blocked"
+        fake.pages[iframe] = GatewayPage(iframe, 403, "text/html", "Forbidden")
+        val resolver = PlaybackResolver(SupjavSource())
+        resolver.gateway = fake
+        val result = resolver.resolve(VideoServer("0", "EVS", iframe, detail))
+        assertTrue(result is ResolveResult.Unavailable)
+        assertTrue((result as ResolveResult.Unavailable).reason.contains("JavaScript"))
+        assertTrue(result.reason.contains("源站限制"))
+    }
+
     @Test fun verificationPageIsNotBypassed() = runBlocking {
         val fake = FakeGateway()
         val url = "https://evsishere.xyz/e/captcha"
