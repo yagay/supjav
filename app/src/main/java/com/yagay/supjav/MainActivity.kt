@@ -572,6 +572,14 @@ private fun Root(
                     if (!embeddedHlsActive) SupjavHeader(
                         "网页兼容播放器", onBack = back,
                         actions = {
+                            if (VideoParts.available(availableServers).size > 1) {
+                                TextButton(onClick = {
+                                    lineSwitchError = null
+                                    partPickerOpen = true
+                                }) {
+                                    Text(selectedServer?.let(VideoParts::partOf) ?: "CD")
+                                }
+                            }
                             IconButton(onClick = {
                                 lineSwitchError = null
                                 linePickerOpen = true
