@@ -9,6 +9,12 @@ import org.junit.Test
 class SupjavServerAdaptersTest {
     private val site = "https://supjav.com/473013.html"
 
+    @Test fun providerNamesKeepWorkingWhenPrecededByCdMarker() {
+        assertEquals(SupjavLine.EVS, SupjavLine.of("CD1 EVS"))
+        assertEquals(SupjavLine.LUC, SupjavLine.of("CD2-LUC"))
+        assertEquals(SupjavLine.FST, SupjavLine.of("FST CD3"))
+    }
+
     @Test fun opaqueTokensWorkForEveryServerLabel() {
         val token = "Ab12_-".repeat(24).take(128)
         for (label in listOf("EVS", "VAS", "VOE", "LUC", "FST", "ST", "TV")) {
