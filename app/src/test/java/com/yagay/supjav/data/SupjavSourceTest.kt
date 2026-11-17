@@ -223,6 +223,31 @@ class SupjavSourceTest {
     }
 
 
+
+    @Test fun tenUnlabeledButtonsInTwoCompleteServerSetsExposeCd1Cd2() {
+        val lines = listOf("EVS", "ST", "VOE", "LUC", "VAS")
+        val html = buildString {
+            append("<section class='player'>")
+            for (disc in 1..2) {
+                append("<div class='btnst'>")
+                for (line in lines) {
+                    append("<a data-link='token" + disc + "-" + line + "'>" +
+                        line + "</a>")
+                }
+                append("</div>")
+            }
+            append("</section>")
+        }
+        val servers = source.parseServers(html, "https://supjav.com/472992.html")
+        assertEquals(10, servers.size)
+        assertEquals(listOf("CD1", "CD2"),
+            com.yagay.supjav.player.VideoParts.available(servers))
+        assertEquals(listOf("CD1", "CD1", "CD1", "CD1", "CD1",
+            "CD2", "CD2", "CD2", "CD2", "CD2"), servers.map { it.part })
+        assertEquals("token2-LUC",
+            com.yagay.supjav.player.VideoParts.forPart(servers, "CD2", servers[3])?.link)
+    }
+
     @Test fun identifiesRealCdGroupsFromSourceButtons() {
         val html = """
           <div class="cd-group" data-part="CD1">
