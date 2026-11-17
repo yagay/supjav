@@ -236,6 +236,10 @@ private fun Root(
 
     SideEffect { onPlayerVisibility(showPlayer) }
     val onOpen: (VideoItem) -> Unit = { video ->
+        if (!DetailRoutePolicy.shouldPush(routes, video)) {
+            Diagnostics.log("NAV_OPEN_DUPLICATE_IGNORED video=" + video.id +
+                " depth=" + routes.size)
+        } else {
         lineSwitchJob?.cancel()
         lineSwitchJob = null
         switchingLine = null
@@ -247,11 +251,14 @@ private fun Root(
         autoOpenWebHls = false
         app.webPlayback.close()
         routes.add(video)
+        Diagnostics.log("NAV_OPEN_DETAIL video=" + video.id +
+            " depth=" + routes.size)
         embeddedHlsActive = false
         webServer = null
         webFallback = null
         showPlayer = false
         showSettings = false
+        }
     }
     // A Back press must always change the top-most visible UI state.
     // The pending resolver is cancellable; never swallow Back while switching.
@@ -265,13 +272,19 @@ private fun Root(
         }
     }
     val back: () -> Unit = {
+        // A hidden/stale picker is not a visible navigation destination.
+        // In that case continue to the real page in the same Back press.
+        if (activeVideo == null) {
+            partPickerOpen = false
+            linePickerOpen = false
+        }
         when {
-            partPickerOpen -> {
+            partPickerOpen && activeVideo != null -> {
                 cancelPendingSourceSwitch()
                 partPickerOpen = false
                 Diagnostics.log("NAV_BACK_CLOSE_PART_PICKER")
             }
-            linePickerOpen -> {
+            linePickerOpen && activeVideo != null -> {
                 cancelPendingSourceSwitch()
                 linePickerOpen = false
                 Diagnostics.log("NAV_BACK_CLOSE_LINE_PICKER")
@@ -298,9 +311,11 @@ private fun Root(
                 showPlayer = false
             }
             routes.isNotEmpty() -> {
-                routes.removeAt(routes.lastIndex)
+                val from = routes.lastOrNull()?.id.orEmpty()
+                val removed = DetailRoutePolicy.popVisible(routes)
                 libraryRevision++
-                Diagnostics.log("NAV_BACK_LEAVE_DETAIL")
+                Diagnostics.log("NAV_BACK_LEAVE_DETAIL video=" + from +
+                    " popped=" + removed + " remaining=" + routes.size)
             }
             activeSearchValue.isNotBlank() -> {
                 clearSearch()
@@ -390,9 +405,21 @@ private fun Root(
         }
     }
 
-    BackHandler(enabled = partPickerOpen || linePickerOpen || showSettings || webServer != null || showPlayer ||
-        routes.isNotEmpty() || activeSearchValue.isNotBlank() ||
-        tab != SupjavTab.RECOMMEND) { back() }
+    BackHandler(
+        enabled = ((partPickerOpen || linePickerOpen) && activeVideo != null) ||
+            showSettings || webServer != null || showPlayer ||
+            routes.isNotEmpty() || activeSearchValue.isNotBlank() ||
+            tab != SupjavTab.RECOMMEND
+    ) {
+        Diagnostics.log("NAV_BACK_SYSTEM tab=" + tab.name +
+            " detailDepth=" + routes.size +
+            " detail=" + (activeVideo?.id ?: "none") +
+            " player=" + showPlayer + " web=" + (webServer != null) +
+            " lineSheet=" + (linePickerOpen && activeVideo != null) +
+            " partSheet=" + (partPickerOpen && activeVideo != null) +
+            " settings=" + showSettings)
+        back()
+    }
 
     if (inPip) {
         PlayerScreen(app, true, onPip, { showPlayer = false })
@@ -479,7 +506,7 @@ private fun Root(
                                     directoryFilter = searchInput,
                                     backEnabled = routes.isEmpty() && !showPlayer &&
                                         webServer == null && !showSettings &&
-                                        !linePickerOpen && !partPickerOpen
+                                        !((linePickerOpen || partPickerOpen) && activeVideo != null)
                                 )
                                 SupjavTab.RANK -> RankPage(app, onOpen)
                                 SupjavTab.MINE -> MinePage(
