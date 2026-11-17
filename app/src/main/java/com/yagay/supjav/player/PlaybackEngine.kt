@@ -9,7 +9,10 @@ import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -42,6 +45,55 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
     private var retries = 0
     private var waitingForConnection = false
     private var lastGoodPosition = 0L
+    private var videoQuality = VideoQualityPolicy.DEFAULT
+
+    private data class Variant(
+        val group: Tracks.Group, val trackIndex: Int,
+        val height: Int, val width: Int, val bitrate: Int
+    )
+
+    private fun supportedVariants(): List<Variant> = player.currentTracks.groups
+        .asSequence()
+        .filter { it.type == C.TRACK_TYPE_VIDEO }
+        .flatMap { group ->
+            (0 until group.length).asSequence().mapNotNull { index ->
+                if (!group.isTrackSupported(index)) return@mapNotNull null
+                val format = group.getTrackFormat(index)
+                if (format.height <= 0) return@mapNotNull null
+                Variant(group, index, format.height, format.width, format.bitrate)
+            }
+        }.toList()
+
+    fun availableVideoHeights(): List<Int> =
+        supportedVariants().map { it.height }.distinct().sortedDescending()
+
+    fun applyVideoQuality(preference: String) {
+        videoQuality = VideoQualityPolicy.normalize(preference)
+        val variants = supportedVariants()
+        val targetHeight = VideoQualityPolicy.targetHeight(
+            variants.map { it.height }, videoQuality
+        )
+        val builder = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+            .clearVideoSizeConstraints()
+            .setForceHighestSupportedBitrate(false)
+        if (videoQuality == VideoQualityPolicy.HIGHEST && targetHeight == null) {
+            // Before the HLS manifest is parsed, prefer the highest bitrate.
+            // Once tracks arrive, pin the actual highest supported resolution.
+            builder.setForceHighestSupportedBitrate(true)
+        } else if (targetHeight != null && variants.map { it.height }.distinct().size > 1) {
+            val chosen = variants.filter { it.height == targetHeight }
+                .maxWithOrNull(compareBy<Variant>({ it.width }, { it.bitrate }))
+            if (chosen != null) builder.setOverrideForType(
+                TrackSelectionOverride(chosen.group.mediaTrackGroup, chosen.trackIndex)
+            )
+        }
+        val next = builder.build()
+        if (next != player.trackSelectionParameters) player.trackSelectionParameters = next
+        Diagnostics.log("VIDEO_QUALITY_NATIVE mode=" + videoQuality +
+            " variants=" + variants.map { it.height }.distinct().size +
+            " selected=" + (targetHeight ?: 0))
+    }
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(net: Network, capabilities: NetworkCapabilities) {
@@ -57,12 +109,19 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
     }
 
     init {
+        videoQuality = VideoQualityPolicy.normalize(
+            context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getString("video_quality", null)
+        )
         runCatching {
             network.registerDefaultNetworkCallback(networkCallback)
             networkRegistered = true
         }.onFailure { Diagnostics.log("NETWORK_LISTENER " + it.javaClass.simpleName) }
 
         player.addListener(object : Player.Listener {
+            override fun onTracksChanged(tracks: Tracks) {
+                applyVideoQuality(videoQuality)
+            }
             override fun onPlayerError(error: PlaybackException) {
                 Diagnostics.log("PLAYER_ERROR " + error.errorCodeName + " " +
                     error.message.orEmpty().take(140))
@@ -164,6 +223,7 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
         currentVideo = video
         lastGoodPosition = resumePosition.coerceAtLeast(0L)
         player.setMediaSource(DefaultMediaSourceFactory(factory).createMediaSource(item))
+        applyVideoQuality(videoQuality)
         player.prepare()
         if (resumePosition > 0) player.seekTo(resumePosition)
         player.playWhenReady = true

@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.yagay.supjav.SupjavApp
+import com.yagay.supjav.player.VideoQualityPolicy
 import com.yagay.supjav.model.VideoItem
 import com.yagay.supjav.util.Diagnostics
 import kotlinx.coroutines.Dispatchers
@@ -94,6 +95,7 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
     var autoPip by remember { mutableStateOf(prefs.getBoolean("auto_pip", false)) }
     var showPip by remember { mutableStateOf(prefs.getBoolean("manual_pip", true)) }
     val posterColumns = app.posterColumns
+    val qualityPreference = app.videoQuality
     var autoWebFallback by remember {
         mutableStateOf(prefs.getBoolean("auto_web_fallback", true))
     }
@@ -148,6 +150,28 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
                     "控制播放器右上角的小窗图标", showPip) {
                     showPip = it
                     prefs.edit().putBoolean("manual_pip", it).apply()
+                }
+            }
+        }
+        SupjavSectionTitle("默认视频画质")
+        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
+            color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("默认优先最高可用画质。画质列表以当前播放源实际提供的清晰度为准；网络不足时建议使用自动。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("highest", "auto", "p1080", "p720", "p480").forEach { mode ->
+                        FilterChip(
+                            selected = qualityPreference == mode,
+                            onClick = { app.setVideoQuality(mode) },
+                            label = { Text(VideoQualityPolicy.label(mode)) }
+                        )
+                    }
                 }
             }
         }

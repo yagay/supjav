@@ -11,12 +11,16 @@ import java.util.Base64
  * The signed media URL is base64 encoded so it cannot terminate a script.
  */
 internal object BrowserHlsDocument {
-    fun render(source: PlaybackSource, resumePositionMs: Long = 0L): String? {
+    fun render(
+        source: PlaybackSource, resumePositionMs: Long = 0L,
+        qualityPreference: String = "highest"
+    ): String? {
         if (source.mimeType != "application/x-mpegURL" ||
             MediaSourceDetector.origin(source.url) == null ||
             MediaSourceDetector.origin(source.referer) == null) return null
         val encoded = Base64.getEncoder().encodeToString(source.url.toByteArray(Charsets.UTF_8))
         val resumeSeconds = (resumePositionMs.coerceIn(0, 86_400_000) / 1000L)
+        val qualityToken = com.yagay.supjav.player.VideoQualityPolicy.normalize(qualityPreference)
         return """
             <!doctype html>
             <html lang="zh"><head><meta charset="UTF-8">
@@ -52,6 +56,10 @@ internal object BrowserHlsDocument {
             .actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:4px}
             .pill{height:37px;padding:0 12px;border-radius:19px;background:rgba(255,255,255,.14);font-size:13px;font-weight:550}
             #speed{font-variant-numeric:tabular-nums;min-width:58px}
+            [hidden]{display:none!important}
+            #qualityMenu{position:absolute;right:12px;bottom:calc(73px + env(safe-area-inset-bottom));z-index:6;max-height:min(48vh,280px);overflow:auto;display:flex;flex-direction:column;gap:3px;min-width:116px;border-radius:12px;padding:6px;background:rgba(25,25,25,.96);box-shadow:0 4px 20px rgba(0,0,0,.4)}
+            #qualityMenu button{min-height:36px;justify-content:flex-start;padding:6px 12px;border-radius:8px;font-size:13px}
+            #qualityMenu button.selected{background:rgba(255,255,255,.18)}
             #hint{position:absolute;top:21%;left:10%;right:10%;z-index:4;text-align:center;pointer-events:none;opacity:0;transition:opacity .2s ease}
             #hint span{display:inline-block;max-width:100%;background:rgba(0,0,0,.7);padding:10px 14px;border-radius:14px;font-size:13px}
             #hint.show{opacity:1}
@@ -101,11 +109,13 @@ internal object BrowserHlsDocument {
                   <div class="actions">
                     <button id="speed" class="pill" aria-label="调整播放速度">1.0×</button>
                     <button id="lines" class="pill" aria-label="切换播放线路">⇄</button>
+                    <button id="quality" class="pill" aria-label="切换视频画质" hidden>HD</button>
                     <span style="flex:1"></span>
                     <button id="rotateBottom" class="pill" aria-label="切换横屏">⛶ 全屏</button>
                   </div>
                 </div>
               </div>
+              <div id="qualityMenu" role="menu" aria-label="画质选项" hidden></div>
               <div id="hint" role="status"><span id="hintText"></span></div>
               <div id="gestureFeedback" aria-hidden="true"></div>
               <div id="playFlash" aria-hidden="true"></div>
@@ -130,6 +140,11 @@ internal object BrowserHlsDocument {
               var playFlash = document.getElementById('playFlash');
               var gestureFeedbackTimer = null, playFlashTimer = null;
               var speed = document.getElementById('speed');
+              var quality = document.getElementById('quality');
+              var qualityMenu = document.getElementById('qualityMenu');
+              var qualityMode = '$qualityToken';
+              var qualityLevels = [];
+              var player = null;
               var hideTimer = null, hintTimer = null, scrubbing = false;
               var speedList = [0.75,1,1.25,1.5,2], speedIndex = 1;
               function state(code){ console.log('SUPJAV_HLS_STATE:' + code); }
@@ -234,6 +249,79 @@ internal object BrowserHlsDocument {
               document.getElementById('rotateBottom').addEventListener('click',rotate);
               document.getElementById('lines').addEventListener('click',function(){
                 state('lines');chromeVisible(true);
+              });
+              // Use only manifest-declared renditions, never infer a resolution
+              // from the EVS/LUC provider's hls2/hls3/hls4 URL tokens.
+              function qualityHeight(level){
+                return level && Number.isFinite(level.height) && level.height>=144 &&
+                    level.height<=4320 ? Math.round(level.height) : 0;
+              }
+              function availableQualityLevels(){
+                if(!player || !Array.isArray(player.levels))return [];
+                return player.levels.map(function(level,index){
+                  return {index:index,height:qualityHeight(level),
+                    bitrate:level.bitrate||0};
+                }).filter(function(level){return level.height>0;});
+              }
+              function selectQualityLevel(mode){
+                if(!player)return;
+                if(mode==='auto'){player.nextLevel=-1;return;}
+                var entries=availableQualityLevels();
+                if(!entries.length)return;
+                var heights=entries.map(function(e){return e.height;});
+                var target;
+                if(mode==='highest')target=Math.max.apply(null,heights);
+                else{
+                  var requested=Number(mode.substring(1));
+                  if(!/^p[1-9][0-9]{2,3}$/.test(mode) || requested>4320)return;
+                  var below=heights.filter(function(h){return h<=requested;});
+                  target=below.length?Math.max.apply(null,below):
+                    Math.min.apply(null,heights);
+                }
+                var candidates=entries.filter(function(e){return e.height===target;});
+                candidates.sort(function(a,b){return b.bitrate-a.bitrate;});
+                if(candidates.length)player.nextLevel=candidates[0].index;
+              }
+              function paintQualityLabel(){
+                var level=player&&player.levels ? player.levels[player.currentLevel] : null;
+                var suffix=qualityHeight(level);
+                quality.textContent=(qualityMode==='auto'?'自动':
+                  qualityMode==='highest'?'最高':qualityMode.substring(1)+'p')+
+                  (qualityMode==='auto' && suffix?' · '+suffix+'p':'');
+              }
+              function renderQualityMenu(){
+                qualityLevels=availableQualityLevels();
+                var heights=Array.from(new Set(qualityLevels.map(function(e){
+                  return e.height;
+                }))).sort(function(a,b){return b-a;});
+                quality.hidden=heights.length<=1;
+                qualityMenu.hidden=true;
+                qualityMenu.textContent='';
+                if(heights.length<=1)return;
+                var modes=['auto','highest'].concat(heights.map(function(h){return 'p'+h;}));
+                modes.forEach(function(mode){
+                  var b=document.createElement('button');
+                  b.type='button';
+                  b.className=mode===qualityMode?'selected':'';
+                  b.textContent=(mode===qualityMode?'✓ ':'')+
+                    (mode==='auto'?'自动':mode==='highest'?'最高可用':mode.substring(1)+'p');
+                  b.addEventListener('click',function(){
+                    qualityMode=mode;
+                    selectQualityLevel(mode);
+                    qualityMenu.hidden=true;
+                    state('quality:'+mode);
+                    paintQualityLabel();
+                    chromeVisible(true);
+                  });
+                  qualityMenu.appendChild(b);
+                });
+                paintQualityLabel();
+              }
+              quality.addEventListener('click',function(){
+                if(quality.hidden)return;
+                renderQualityMenu();
+                qualityMenu.hidden=false;
+                chromeVisible(true);
               });
               speed.addEventListener('click',function(){
                 speedIndex=(speedIndex+1)%speedList.length;
@@ -407,12 +495,15 @@ internal object BrowserHlsDocument {
               try{
                 if(window.Hls && Hls.isSupported()){
                   state('hlsjs');
-                  var player=new Hls({enableWorker:false,maxBufferLength:20});
+                  player=new Hls({enableWorker:false,maxBufferLength:20});
                   player.on(Hls.Events.MEDIA_ATTACHED,function(){player.loadSource(mediaUrl);});
                   player.on(Hls.Events.MANIFEST_PARSED,function(){
                     state('manifest');
+                    renderQualityMenu();
+                    selectQualityLevel(qualityMode);
                     video.play().catch(function(){state('tap-play');message('请点击播放');});
                   });
+                  player.on(Hls.Events.LEVEL_SWITCHED,function(){paintQualityLabel();});
                   var networkRecoveries=0,mediaRecoveries=0;
                   player.on(Hls.Events.ERROR,function(event,error){
                     if(!error||!error.fatal)return;

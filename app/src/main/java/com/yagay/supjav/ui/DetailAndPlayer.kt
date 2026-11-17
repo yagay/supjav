@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
+import com.yagay.supjav.player.VideoQualityPolicy
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -364,6 +366,8 @@ fun PlayerScreen(
     var duration by remember { mutableLongStateOf(player.duration.coerceAtLeast(0)) }
     var speed by remember { mutableFloatStateOf(player.playbackParameters.speed) }
     var expandedSettings by remember { mutableStateOf(false) }
+    var qualityPickerOpen by remember { mutableStateOf(false) }
+    var qualityHeights by remember { mutableStateOf(engine.availableVideoHeights()) }
     var fill by remember { mutableStateOf(prefs.getBoolean("fill_video", false)) }
     var draggingSeek by remember { mutableStateOf(false) }
     var gestureScrubbing by remember { mutableStateOf(false) }
@@ -402,6 +406,9 @@ fun PlayerScreen(
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
                 if (value) currentError = null
+            }
+            override fun onTracksChanged(tracks: Tracks) {
+                qualityHeights = engine.availableVideoHeights()
             }
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
@@ -697,6 +704,13 @@ fun PlayerScreen(
                     IconButton(onClick = onShowLinePicker, modifier = Modifier.size(42.dp)) {
                         Icon(Icons.Outlined.Tune, "切换播放线路", tint = Color.White)
                     }
+                    if (qualityHeights.size > 1) {
+                        IconButton(onClick = { qualityPickerOpen = true },
+                            modifier = Modifier.size(42.dp)) {
+                            Text("HD", color = Color.White,
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                     if (prefs.getBoolean("manual_pip", true)) {
                         IconButton(onClick = enterPip, modifier = Modifier.size(42.dp)) {
                             Icon(Icons.Outlined.PictureInPictureAlt, "画中画", tint = Color.White)
@@ -742,6 +756,25 @@ fun PlayerScreen(
                 }
             }
         }
+        }
+    }
+    if (qualityPickerOpen && !pip) {
+        SupjavModalSheet(title = "视频清晰度", onDismiss = { qualityPickerOpen = false }) {
+            Text("仅显示当前播放源实际支持的分辨率，切换不重建播放器。",
+                style = MaterialTheme.typography.bodySmall)
+            VideoQualityPolicy.choices(qualityHeights).forEach { mode ->
+                val selected = app.videoQuality == mode
+                TextButton(
+                    onClick = {
+                        app.setVideoQuality(mode)
+                        qualityPickerOpen = false
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text((if (selected) "✓  " else "") +
+                        VideoQualityPolicy.label(mode))
+                }
+            }
         }
     }
     if (expandedSettings && !pip) {

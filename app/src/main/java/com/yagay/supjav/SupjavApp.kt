@@ -13,6 +13,7 @@ import com.yagay.supjav.data.SearchStore
 import com.yagay.supjav.data.CategoryStore
 import com.yagay.supjav.data.SiteCatalogRepository
 import com.yagay.supjav.data.RecentRouteStore
+import com.yagay.supjav.player.VideoQualityPolicy
 import com.yagay.supjav.util.Diagnostics
 
 class SupjavApp : Application() {
@@ -24,6 +25,15 @@ class SupjavApp : Application() {
     val categoryStore by lazy { CategoryStore(this) }
     val catalog by lazy { SiteCatalogRepository(source, categoryStore) }
     val recentRoute by lazy { RecentRouteStore(this) }
+    var videoQuality by androidx.compose.runtime.mutableStateOf(VideoQualityPolicy.DEFAULT)
+        private set
+
+    fun setVideoQuality(preference: String) {
+        val normalized = VideoQualityPolicy.normalize(preference)
+        videoQuality = normalized
+        preferences.edit().putString("video_quality", normalized).apply()
+        playerEngine.applyVideoQuality(normalized)
+    }
     var posterColumns by androidx.compose.runtime.mutableIntStateOf(-1)
         private set
     fun updatePosterColumns(columns: Int) {
@@ -39,5 +49,6 @@ class SupjavApp : Application() {
         super.onCreate()
         Diagnostics.initialize(this)
         posterColumns = preferences.getInt("poster_columns", 0)
+        videoQuality = VideoQualityPolicy.normalize(preferences.getString("video_quality", null))
     }
 }

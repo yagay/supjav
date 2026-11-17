@@ -17,6 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.yagay.supjav.SupjavApp
+import com.yagay.supjav.player.VideoQualityPolicy
 import com.yagay.supjav.data.BrowserHlsDocument
 import com.yagay.supjav.data.MediaSourceDetector
 import com.yagay.supjav.data.SupjavSource
@@ -38,12 +40,14 @@ internal fun EmbeddedHlsPlayer(
     onWebsitePlayer: () -> Unit
 ) {
     val context = LocalContext.current
+    val app = context.applicationContext as? SupjavApp
     val activity = context as? Activity
     val resume by produceState<Long?>(initialValue = null, source.url, session) {
         value = session.restorePosition()
     }
     val document = remember(source.url, source.referer, resume) {
-        resume?.let { BrowserHlsDocument.render(source, it) }
+        resume?.let { BrowserHlsDocument.render(source, it,
+            app?.videoQuality ?: VideoQualityPolicy.DEFAULT) }
     }
     if (resume == null) {
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
@@ -151,17 +155,24 @@ internal fun EmbeddedHlsPlayer(
                             ?.removePrefix("SUPJAV_HLS_STATE:") ?: return false
                         // The only messages emitted by our player document are
                         // predefined state/action codes; never log signed URLs.
-                        when (code) {
-                            "lines" -> {
+                        when {
+                            code.startsWith("quality:") -> {
+                                val rawMode = code.removePrefix("quality:")
+                                if (VideoQualityPolicy.normalize(rawMode) == rawMode) {
+                                    app?.setVideoQuality(rawMode)
+                                    Diagnostics.log("EMBEDDED_HLS_QUALITY mode=" + rawMode)
+                                }
+                            }
+                            code == "lines" -> {
                                 Diagnostics.log("EMBEDDED_HLS_LINE_PICKER")
                                 onShowLinePicker()
                             }
-                            "website" -> {
+                            code == "website" -> {
                                 Diagnostics.log("EMBEDDED_HLS_WEBSITE_SELECTED")
                                 resetOrientation()
                                 onWebsitePlayer()
                             }
-                            "rotate" -> {
+                            code == "rotate" -> {
                                 landscape = !landscape
                                 activity?.let {
                                     val controller = WindowCompat.getInsetsController(

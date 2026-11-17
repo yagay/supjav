@@ -97,6 +97,23 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("mediaRecoveries<1"))
     }
 
+    @Test fun hlsQualityPickerReadsActualManifestAndPreservesSource() {
+        val source = PlaybackSource(
+            "https://cdn.example.com/hls4/master.m3u8?private=abc",
+            "application/x-mpegURL", "https://evsishere.xyz/e/a"
+        )
+        val html = requireNotNull(BrowserHlsDocument.render(source, 0L, "p1080"))
+        assertTrue(html.contains("var qualityMode = 'p1080'"))
+        assertTrue(html.contains("id=\"quality\""))
+        assertTrue(html.contains("id=\"qualityMenu\""))
+        assertTrue(html.contains("player.levels"))
+        assertTrue(html.contains("Hls.Events.MANIFEST_PARSED"))
+        assertTrue(html.contains("player.nextLevel"))
+        assertTrue(html.contains("state('quality:'+mode)"))
+        assertTrue(html.contains("heights.length<=1"))
+        assertFalse(html.contains(source.url))
+    }
+
     @Test fun rejectsMp4AndUnsafeHosts() {
         assertNull(BrowserHlsDocument.render(PlaybackSource(
             "https://media.example.com/a.mp4", "video/mp4",
