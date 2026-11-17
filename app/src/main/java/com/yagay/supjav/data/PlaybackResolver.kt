@@ -132,13 +132,18 @@ class PlaybackResolver(private val source: SupjavSource) {
                     if (probe.status in listOf(403, 429)) httpBlocked = true
                     continue
                 }
-                if (Regex("""(?i)(?:captcha|robot verification|cloudflare challenge|verify you are human)""")
-                        .containsMatchIn(page.body.take(15_000))) {
-                    Diagnostics.log("RESOLVE_VERIFICATION_REQUIRED line=" + line.name)
+                if (PlaybackChallengeDetector.requiresHuman(page.body)) {
+                    Diagnostics.log("RESOLVE_VERIFICATION_REQUIRED line=" + line.name +
+                        " evidence=visible-challenge")
                     return@withContext ResolveResult.VerificationRequired
                 }
                 val result = SupjavServerAdapters.extract(line, page.body, page.url)
                 val candidates = result.candidates.toMutableList()
+                if (line == SupjavLine.ST) {
+                    Diagnostics.log("RESOLVE_ST_PAGE host=" + URI(page.url).host +
+                        " candidateCount=" + candidates.size +
+                        " embeddedFrames=" + result.nextPages.size)
+                }
 
                 // VAS exposes a same-origin public player API, not a prebuilt HLS link.
                 if (line == SupjavLine.VAS && result.vasApi != null) {
