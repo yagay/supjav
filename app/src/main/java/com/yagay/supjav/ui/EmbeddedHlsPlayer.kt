@@ -38,6 +38,7 @@ internal fun EmbeddedHlsPlayer(
     source: PlaybackSource,
     session: WebPlaybackSession,
     onShowLinePicker: () -> Unit,
+    onShowPlaylist: () -> Unit = {},
     availableParts: List<String> = emptyList(),
     activePart: String? = null,
     onSelectPart: (String) -> Unit = {},
@@ -210,6 +211,10 @@ internal fun EmbeddedHlsPlayer(
                             code == "lines" -> {
                                 Diagnostics.log("EMBEDDED_HLS_LINE_PICKER")
                                 onShowLinePicker()
+                            }
+                            code == "playlist" -> {
+                                Diagnostics.log("EMBEDDED_HLS_PLAYLIST_OPEN")
+                                onShowPlaylist()
                             }
                             code.startsWith("part:") -> {
                                 val part = code.removePrefix("part:")
