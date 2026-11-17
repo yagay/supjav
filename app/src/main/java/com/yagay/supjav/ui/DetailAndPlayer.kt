@@ -52,9 +52,10 @@ fun DetailScreen(
     app: SupjavApp,
     video: VideoItem,
     onVideo: (VideoItem) -> Unit,
-    onPlay: () -> Unit,
+    onPlay: (VideoServer) -> Unit,
     onFilter: (FeedKind, String) -> Unit,
-    onWebPlay: (VideoServer) -> Unit
+    onWebPlay: (VideoServer) -> Unit,
+    onServersUpdated: (List<VideoServer>) -> Unit = {}
 ) {
     var detail by remember(video.id) { mutableStateOf<VideoDetail?>(null) }
     var error by remember(video.id) { mutableStateOf<String?>(null) }
@@ -75,6 +76,7 @@ fun DetailScreen(
             favorite = withContext(Dispatchers.IO) { app.library.isFavorite(video.id) }
             val response = app.source.detail(video)
             detail = response
+            onServersUpdated(response.servers)
             withContext(Dispatchers.IO) {
                 app.categoryStore.save(response.taxonomy.map {
                     com.yagay.supjav.data.SupjavSource.BrowseOption(
@@ -107,7 +109,7 @@ fun DetailScreen(
                 when (val result = app.resolver.resolve(server)) {
                     is ResolveResult.Playable -> {
                         app.playerEngine.play(detail?.video ?: video, result.source)
-                        onPlay()
+                        onPlay(server)
                     }
                     is ResolveResult.Unavailable -> {
                         Diagnostics.log("PLAY_SOURCE_UNAVAILABLE video=" + video.id +
@@ -338,7 +340,8 @@ fun PlayerScreen(
     pip: Boolean,
     enterPip: () -> Unit,
     onBack: () -> Unit,
-    onWebFallback: (() -> Unit)? = null
+    onWebFallback: (() -> Unit)? = null,
+    onShowLinePicker: () -> Unit = {}
 ) {
     val engine = app.playerEngine
     val player = engine.player
@@ -497,7 +500,15 @@ fun PlayerScreen(
                         player.seekTo((player.currentPosition + 10_000L)
                             .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
                     }) { Icon(Icons.Outlined.Forward10, "快进10秒", tint = Color.White) }
-                    IconButton(onClick = { expandedSettings = true }) {
+                    IconButton(onClick = onShowLinePicker, modifier = Modifier.size(42.dp)) {
+                        Icon(Icons.Outlined.Tune, "切换播放线路", tint = Color.White)
+                    }
+                    if (prefs.getBoolean("manual_pip", true)) {
+                        IconButton(onClick = enterPip, modifier = Modifier.size(42.dp)) {
+                            Icon(Icons.Outlined.PictureInPictureAlt, "画中画", tint = Color.White)
+                        }
+                    }
+                    IconButton(onClick = { expandedSettings = true }, modifier = Modifier.size(42.dp)) {
                         Icon(Icons.Outlined.MoreVert, "播放设置", tint = Color.White)
                     }
                     IconButton(onClick = {
@@ -535,21 +546,6 @@ fun PlayerScreen(
                         }
                     }
                 }
-                Row(
-                    Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    TextButton(onClick = {
-                        engine.savePosition()
-                        onBack()
-                    }) { Text("详情 / 切换线路") }
-                    if (prefs.getBoolean("manual_pip", true)) {
-                        TextButton(onClick = enterPip) {
-                            Icon(Icons.Outlined.PictureInPictureAlt, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(5.dp))
-                            Text("小窗")
-                        }
-                    }
-                }
             }
         }
     }
@@ -582,7 +578,7 @@ fun PlayerScreen(
                     prefs.edit().putBoolean("fill_video", true).apply()
                 }, label = { Text("铺满画面") })
             }
-            Text("如需切换视频线路，请返回作品详情；不支持的第三方验证线路不会强行解析。",
+            Text("播放界面内可直接点击线路图标切换；需要人工验证的线路不会自动跳过验证。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
