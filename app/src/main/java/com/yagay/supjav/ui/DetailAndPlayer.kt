@@ -415,6 +415,7 @@ fun PlayerScreen(
     onWebFallback: (() -> Unit)? = null,
     onShowLinePicker: () -> Unit = {},
     onShowPartPicker: () -> Unit = {},
+    onShowPlaylist: () -> Unit = {},
     onSelectPart: (String) -> Unit = {},
     availableParts: List<String> = emptyList(),
     activePart: String? = null,
@@ -848,6 +849,12 @@ fun PlayerScreen(
                             color = Color.White,
                             style = MaterialTheme.typography.labelMedium)
                     }
+                }
+                IconButton(
+                    onClick = onShowPlaylist,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(Icons.Outlined.PlaylistPlay, "播放列表", tint = Color.White)
                 }
                 IconButton(
                     onClick = onShowLinePicker,
