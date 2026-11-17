@@ -75,12 +75,16 @@ class WebPlaybackSession(
         val video = currentVideo ?: return
         if (position < 0 || duration < 0) return
         val validPosition = if (duration > 0) position.coerceIn(0, duration) else position
+        val previousPosition = positionMs
         positionMs = validPosition
         durationMs = duration
         val priorPlaying = isPlaying
         isPlaying = playing
         hasProgress = true
-        publishSystemMedia(force = priorPlaying != playing)
+        // A 10-second gesture or system seek must refresh media controls
+        // immediately; regular timeupdate events remain throttled.
+        publishSystemMedia(force = priorPlaying != playing ||
+            kotlin.math.abs(validPosition - previousPosition) > 3_000L)
         if (android.os.SystemClock.elapsedRealtime() - lastSaveTime >= 10_000L) {
             lastSaveTime = android.os.SystemClock.elapsedRealtime()
             val snapshot = if (duration > 0 && duration - validPosition < 5_000L) 0L

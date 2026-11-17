@@ -43,6 +43,7 @@ class WebMediaPlaybackService : Service() {
     private lateinit var session: MediaSession
     private lateinit var notifications: NotificationManager
     private var foreground = false
+    private var foregroundHandshake = false
 
     override fun onCreate() {
         super.onCreate()
@@ -140,7 +141,10 @@ class WebMediaPlaybackService : Service() {
                 .setMediaSession(session.sessionToken)
                 .setShowActionsInCompactView(0, 1, 2))
             .build()
-        if (playing) {
+        // startForegroundService() may race with a rapid user pause. On the
+        // first command we must fulfil Android's foreground-start contract
+        // even if playback has already paused by the time the service runs.
+        if (playing || !foregroundHandshake) {
             if (Build.VERSION.SDK_INT >= 29) {
                 startForeground(
                     NOTIFICATION, notification,
@@ -150,7 +154,9 @@ class WebMediaPlaybackService : Service() {
                 startForeground(NOTIFICATION, notification)
             }
             foreground = true
-        } else {
+        }
+        foregroundHandshake = true
+        if (!playing) {
             if (foreground) {
                 stopForeground(STOP_FOREGROUND_DETACH)
                 foreground = false
