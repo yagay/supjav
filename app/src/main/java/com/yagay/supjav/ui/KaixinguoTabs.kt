@@ -4,6 +4,7 @@ package com.yagay.supjav.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -62,8 +63,9 @@ fun RankPage(app: SupjavApp, onVideo: (VideoItem) -> Unit) {
     var selected by rememberSaveableRank() 
     val ranks = listOf(FeedKind.DAY, FeedKind.WEEK, FeedKind.MONTH)
     Column(Modifier.fillMaxSize()) {
-        SupjavSectionTitle("热门排行榜", "按网站提供的日 / 周 / 月热门排序",
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            SupjavSectionTitle("热门排行榜", "按网站提供的日 / 周 / 月热门排序")
+        }
         SingleChoiceSegmentedButtonRow(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
