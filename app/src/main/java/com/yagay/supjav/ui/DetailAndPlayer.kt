@@ -817,7 +817,11 @@ fun PlayerScreen(
         if (!pip && !gestureScrubbing && gestureLevelKind == null &&
             (controlsVisible || currentError != null)) {
             IconButton(
-                onClick = { engine.savePosition(); onBack() },
+                onClick = {
+                    Diagnostics.log("NAV_BACK_PLAYER_BUTTON")
+                    engine.savePosition()
+                    onBack()
+                },
                 modifier = Modifier.align(Alignment.TopStart)
             ) { Icon(Icons.Outlined.ArrowBack, "返回详情", tint = Color.White) }
             // Less frequently used actions belong above the video, away from
