@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import com.yagay.supjav.model.FeedKind
+import com.yagay.supjav.model.VideoServer
 import com.yagay.supjav.model.VideoItem
 import com.yagay.supjav.ui.*
 
@@ -124,6 +125,7 @@ private fun Root(
     val routes = remember { mutableStateListOf<VideoItem>() }
     val activeVideo = routes.lastOrNull()
     var showPlayer by remember { mutableStateOf(false) }
+    var webServer by remember { mutableStateOf<VideoServer?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var libraryRevision by remember { mutableIntStateOf(0) }
@@ -135,12 +137,14 @@ private fun Root(
     SideEffect { onPlayerVisibility(showPlayer) }
     val onOpen: (VideoItem) -> Unit = { video ->
         routes.add(video)
+        webServer = null
         showPlayer = false
         showSettings = false
     }
     val back: () -> Unit = {
         when {
             showSettings -> showSettings = false
+            webServer != null -> webServer = null
             showPlayer -> {
                 app.playerEngine.savePosition()
                 (context as? ComponentActivity)?.requestedOrientation =
@@ -151,7 +155,7 @@ private fun Root(
             tab != SupjavTab.RECOMMEND -> tab = SupjavTab.RECOMMEND
         }
     }
-    BackHandler(enabled = showSettings || showPlayer ||
+    BackHandler(enabled = showSettings || webServer != null || showPlayer ||
         routes.isNotEmpty() || tab != SupjavTab.RECOMMEND) { back() }
 
     if (inPip) {
@@ -228,6 +232,10 @@ private fun Root(
                             DetailScreen(
                                 app = app, video = video, onVideo = onOpen,
                                 onPlay = { showPlayer = true },
+                                onWebPlay = { server ->
+                                    app.playerEngine.player.pause()
+                                    webServer = server
+                                },
                                 onFilter = { kind, value ->
                                     routes.clear()
                                     targetCategoryKind = kind
@@ -263,6 +271,23 @@ private fun Root(
             }
         }
 
+
+        AnimatedVisibility(
+            visible = webServer != null,
+            modifier = Modifier.fillMaxSize().zIndex(2.5f),
+            enter = slideInHorizontally(tween(270)) { it },
+            exit = slideOutHorizontally(tween(250)) { it }
+        ) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column {
+                    SupjavHeader("网页兼容播放器", onBack = back)
+                    webServer?.let { server ->
+                        key(server.id, server.link) { ScriptPlayerScreen(server) }
+                    }
+                }
+            }
+        }
+
         AnimatedVisibility(
             visible = showSettings,
             modifier = Modifier.fillMaxSize().zIndex(3f),
@@ -277,7 +302,7 @@ private fun Root(
             }
         }
 
-        if (!showSettings && !showPlayer && routes.isEmpty() && app.playerEngine.currentVideo != null) {
+        if (!showSettings && webServer == null && !showPlayer && routes.isEmpty() && app.playerEngine.currentVideo != null) {
             Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 86.dp).zIndex(0.5f)) {
                 MiniPlayerBar(app) { showPlayer = true }
             }
