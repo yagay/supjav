@@ -11,7 +11,7 @@ import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.abs
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -364,6 +365,12 @@ fun PlayerScreen(
     val player = engine.player
     val video = engine.currentVideo
     val context = LocalContext.current
+    val systemControls = remember(context) {
+        (context as? Activity)?.let(::PlayerSystemControls)
+    }
+    DisposableEffect(systemControls) {
+        onDispose { systemControls?.restoreBrightness() }
+    }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val prefs = app.preferences
     var currentError by remember { mutableStateOf<String?>(null) }
@@ -389,6 +396,8 @@ fun PlayerScreen(
     var draggingSeek by remember { mutableStateOf(false) }
     var gestureScrubbing by remember { mutableStateOf(false) }
     var gesturePositionMs by remember { mutableLongStateOf(0L) }
+    var gestureLevelKind by remember { mutableStateOf<String?>(null) }
+    var gestureLevel by remember { mutableFloatStateOf(0f) }
     var pressBoostOriginal by remember { mutableStateOf<Float?>(null) }
     var pressBoostSide by remember { mutableIntStateOf(0) }
     var pressBoostWasPaused by remember { mutableStateOf(false) }
@@ -495,44 +504,88 @@ fun PlayerScreen(
                 // once on release to avoid repeated segment requests.
                 Box(
                     Modifier.fillMaxSize()
-                        .pointerInput(player, duration) {
-                            var enabled = false
-                            var originMs = 0L
-                            var distance = 0f
-                            detectHorizontalDragGestures(
-                                onDragStart = { offset ->
-                                    enabled = duration > 0L &&
-                                        (offset.y < size.height * .30f ||
-                                            offset.y > size.height * .70f)
-                                    if (enabled) {
-                                        originMs = player.currentPosition.coerceIn(0L, duration)
-                                        distance = 0f
-                                        gesturePositionMs = originMs
-                                        gestureScrubbing = true
-                                        controlsVisible = true
-                                    }
+                        .pointerInput(player, duration, systemControls) {
+                            // Axis-lock: horizontal seeking anywhere when controls
+                            // are hidden; vertical left/right brightness/volume.
+                            var startX = 0f
+                            var startY = 0f
+                            var startingPosition = 0L
+                            var startLevel = 0f
+                            var direction: String? = null
+                            var allowedSeek = false
+                            detectDragGestures(
+                                onDragStart = { down ->
+                                    startX = down.x
+                                    startY = down.y
+                                    startingPosition = player.currentPosition.coerceAtLeast(0L)
+                                    direction = null
+                                    startLevel = 0f
+                                    allowedSeek = duration > 0L && (
+                                        !controlsVisible ||
+                                        down.y < size.height * .30f ||
+                                        down.y > size.height * .70f
+                                    )
                                 },
-                                onHorizontalDrag = { change, amount ->
-                                    if (enabled) {
-                                        distance += amount
-                                        val deltaMs = (distance /
-                                            size.width.coerceAtLeast(1) * duration).toLong()
-                                        gesturePositionMs =
-                                            (originMs + deltaMs).coerceIn(0L, duration)
-                                        change.consume()
+                                onDrag = { change, _ ->
+                                    val dx = change.position.x - startX
+                                    val dy = change.position.y - startY
+                                    if (direction == null) {
+                                        if (abs(dx) > abs(dy) * 1.25f && allowedSeek) {
+                                            direction = "seek"
+                                            gestureScrubbing = true
+                                            gesturePositionMs = startingPosition
+                                            gestureFlash = null
+                                            controlsVisible = false
+                                        } else if (abs(dy) > abs(dx) * 1.25f &&
+                                            systemControls != null) {
+                                            direction = if (startX < size.width / 2f)
+                                                "brightness" else "volume"
+                                            startLevel = if (direction == "brightness")
+                                                systemControls.brightness()
+                                                else systemControls.volume()
+                                            gestureLevelKind = direction
+                                            gestureLevel = startLevel
+                                            gestureFlash = null
+                                            controlsVisible = false
+                                        }
+                                    }
+                                    when (direction) {
+                                        "seek" -> {
+                                            gesturePositionMs = (startingPosition +
+                                                (dx / size.width.coerceAtLeast(1) *
+                                                    duration).toLong())
+                                                .coerceIn(0L, duration)
+                                            change.consume()
+                                        }
+                                        "brightness" -> {
+                                            gestureLevel = systemControls?.setBrightness(
+                                                startLevel - dy /
+                                                    size.height.coerceAtLeast(1) * 1.25f
+                                            ) ?: startLevel
+                                            change.consume()
+                                        }
+                                        "volume" -> {
+                                            gestureLevel = systemControls?.setVolume(
+                                                startLevel - dy /
+                                                    size.height.coerceAtLeast(1) * 1.25f
+                                            ) ?: startLevel
+                                            change.consume()
+                                        }
                                     }
                                 },
                                 onDragEnd = {
-                                    if (enabled) {
+                                    if (direction == "seek" && gestureScrubbing) {
                                         player.seekTo(gesturePositionMs)
-                                        gestureScrubbing = false
-                                        controlsVisible = true
+                                        engine.savePosition()
                                     }
-                                    enabled = false
+                                    gestureScrubbing = false
+                                    gestureLevelKind = null
+                                    direction = null
                                 },
                                 onDragCancel = {
                                     gestureScrubbing = false
-                                    enabled = false
+                                    gestureLevelKind = null
+                                    direction = null
                                 }
                             )
                         }
@@ -616,14 +669,54 @@ fun PlayerScreen(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
         ) {
         if (!pip && gestureScrubbing) {
-            Text(
-                "调整进度  ${formatTime(gesturePositionMs)} / ${formatTime(duration)}",
-                modifier = Modifier.align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Column(
+                Modifier.align(Alignment.BottomCenter)
+                    .fillMaxWidth().padding(horizontal = 18.dp, vertical = 34.dp)
+                    .background(Color.Black.copy(alpha = .62f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(formatTime(gesturePositionMs), color = Color.White,
+                        style = MaterialTheme.typography.labelMedium)
+                    Text(formatTime(duration), color = Color.White,
+                        style = MaterialTheme.typography.labelMedium)
+                }
+                LinearProgressIndicator(
+                    progress = {
+                        if (duration > 0L)
+                            (gesturePositionMs.toFloat() / duration).coerceIn(0f, 1f)
+                        else 0f
+                    },
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = .35f)
+                )
+            }
+        }
+        if (!pip && gestureLevelKind != null) {
+            Column(
+                Modifier.align(if (gestureLevelKind == "brightness")
+                    Alignment.CenterStart else Alignment.CenterEnd)
+                    .padding(horizontal = 18.dp)
+                    .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    if (gestureLevelKind == "brightness") Icons.Outlined.Brightness6
+                    else Icons.Outlined.VolumeUp,
+                    gestureLevelKind, tint = Color.White
+                )
+                Text("${(gestureLevel * 100).toInt()}%", color = Color.White)
+                LinearProgressIndicator(
+                    progress = { gestureLevel.coerceIn(0f, 1f) },
+                    modifier = Modifier.width(72.dp).height(3.dp),
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = .35f)
+                )
+            }
         }
         if (!pip && gestureFlash != null) {
             val direction = gestureFlashSide
@@ -653,7 +746,8 @@ fun PlayerScreen(
         // A paused video keeps its pause mark in the center even after the
         // transient gesture feedback has faded. It never captures touches.
         if (!pip && !playWhenReady && currentError == null &&
-            !gestureScrubbing && pressBoostOriginal == null) {
+            !gestureScrubbing && gestureLevelKind == null &&
+            pressBoostOriginal == null) {
             Box(
                 Modifier.align(Alignment.Center)
                     .background(Color.Black.copy(alpha = .30f), CircleShape)
@@ -677,7 +771,8 @@ fun PlayerScreen(
                 style = MaterialTheme.typography.labelMedium
             )
         }
-        if (!pip && (controlsVisible || currentError != null)) {
+        if (!pip && !gestureScrubbing && gestureLevelKind == null &&
+            (controlsVisible || currentError != null)) {
             IconButton(
                 onClick = { engine.savePosition(); onBack() },
                 modifier = Modifier.align(Alignment.TopStart)

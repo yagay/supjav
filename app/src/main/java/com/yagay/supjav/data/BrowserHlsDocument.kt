@@ -18,7 +18,9 @@ internal object BrowserHlsDocument {
         defaultFill: Boolean = false,
         skipSeconds: Int = 10,
         holdSpeed: Float = 2f,
-        autoPlay: Boolean = true
+        autoPlay: Boolean = true,
+        initialBrightness: Float = 0.5f,
+        initialVolume: Float = 0.5f
     ): String? {
         if (source.mimeType != "application/x-mpegURL" ||
             MediaSourceDetector.origin(source.url) == null ||
@@ -31,6 +33,10 @@ internal object BrowserHlsDocument {
         val playbackSkip = com.yagay.supjav.player.PlaybackDefaults.skip(skipSeconds)
         val playbackFit = if (defaultFill) "cover" else "contain"
         val playbackAuto = if (autoPlay) "true" else "false"
+        val brightnessStart = if (initialBrightness.isFinite())
+            initialBrightness.coerceIn(0.01f, 1f) else 0.5f
+        val volumeStart = if (initialVolume.isFinite())
+            initialVolume.coerceIn(0f, 1f) else 0.5f
         return """
             <!doctype html>
             <html lang="zh"><head><meta charset="UTF-8">
@@ -54,6 +60,14 @@ internal object BrowserHlsDocument {
             .top-button{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.12);font-size:24px}
             #center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:min(7vw,32px);pointer-events:none}
             #center button{pointer-events:auto;border-radius:50%;background:rgba(20,20,20,.55);backdrop-filter:blur(5px)}
+            #gestureSeek{position:absolute;left:12px;right:12px;bottom:calc(24px + env(safe-area-inset-bottom));z-index:7;padding:12px 14px;border-radius:12px;background:rgba(0,0,0,.68);pointer-events:none}
+            #gestureSeekTime{display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;font-variant-numeric:tabular-nums}
+            #gestureSeekTrack{height:3px;border-radius:3px;background:rgba(255,255,255,.34);overflow:hidden}
+            #gestureSeekFill{height:100%;width:0%;background:white}
+            #gestureLevel{position:absolute;z-index:7;top:44%;transform:translateY(-50%);width:96px;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.64);text-align:center;font-size:13px;pointer-events:none}
+            #gestureLevel.left{left:12px}#gestureLevel.right{right:12px}
+            #gestureLevelTrack{height:3px;margin-top:8px;background:rgba(255,255,255,.34);border-radius:3px;overflow:hidden}
+            #gestureLevelFill{height:100%;background:white;width:0%}
             #pausedIndicator{position:absolute;z-index:4;left:50%;top:50%;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.30);font-size:29px;color:#fff;pointer-events:none}
             #center .skip{width:54px;height:54px;font-size:15px;font-weight:600}
             #play{width:68px;height:68px;font-size:30px}
@@ -102,6 +116,14 @@ internal object BrowserHlsDocument {
               <div id="spinner" aria-hidden="true"></div>
               <div id="gestures" aria-label="首次单击显示控制栏，再次单击暂停，双击两侧跳转，长按两侧倍速，上下区域左右滑动进度"></div>
               <div id="pausedIndicator" aria-label="已暂停" hidden>❚❚</div>
+              <div id="gestureSeek" aria-label="正在调整播放进度" hidden>
+                <div id="gestureSeekTime"><span id="gestureSeekCurrent">00:00</span><span id="gestureSeekTotal">--:--</span></div>
+                <div id="gestureSeekTrack"><div id="gestureSeekFill"></div></div>
+              </div>
+              <div id="gestureLevel" role="status" hidden>
+                <span id="gestureLevelText"></span>
+                <div id="gestureLevelTrack"><div id="gestureLevelFill"></div></div>
+              </div>
               <div id="chrome">
                 <div id="top">
                   <button class="top-button" id="back" aria-label="返回网站播放器">‹</button>
@@ -151,6 +173,15 @@ internal object BrowserHlsDocument {
               var hintText = document.getElementById('hintText');
               var gestureFeedback = document.getElementById('gestureFeedback');
               var playFlash = document.getElementById('playFlash');
+              var gestureSeek = document.getElementById('gestureSeek');
+              var gestureSeekCurrent = document.getElementById('gestureSeekCurrent');
+              var gestureSeekTotal = document.getElementById('gestureSeekTotal');
+              var gestureSeekFill = document.getElementById('gestureSeekFill');
+              var gestureLevel = document.getElementById('gestureLevel');
+              var gestureLevelText = document.getElementById('gestureLevelText');
+              var gestureLevelFill = document.getElementById('gestureLevelFill');
+              var brightnessValue = $brightnessStart;
+              var volumeValue = $volumeStart;
               var pausedIndicator = document.getElementById('pausedIndicator');
               var gestureFeedbackTimer = null, playFlashTimer = null;
               var speed = document.getElementById('speed');
@@ -382,20 +413,42 @@ internal object BrowserHlsDocument {
                 if(!progress.disabled)video.currentTime=video.duration*Number(progress.value)/1000;
                 scrubbing=false;tick();chromeVisible(true);
               });
-              // A single pointer state machine avoids fighting with the seek
-              // bar/buttons and defers single taps until the double-tap window
-              // ends. Scrubbing only begins in the unused upper/lower video
-              // regions, so the middle controls remain easy to operate.
+              // Axis-locking pointer state machine. Swipes work over the
+              // entire player when controls are hidden; drags never reveal
+              // transport buttons. One seek is committed on finger release.
               var gestureLayer = document.getElementById('gestures');
               var activeGesture = null, holdTimer = null, singleTapTimer = null;
-              var lastTap = null, previousHoldRate = null;
-              var holdWasPaused = false;
+              var lastTap = null, previousHoldRate = null, holdWasPaused = false;
               function gestureSide(x,width) {
                 return x < width*.38 ? 'left' : x > width*.62 ? 'right' : 'center';
               }
+              function clampLevel(v){return Math.max(0,Math.min(1,v));}
+              function updateGestureSeek(seconds){
+                var valid=Number.isFinite(video.duration) && video.duration>0;
+                if(!valid)return;
+                gestureSeekCurrent.textContent=clock(seconds);
+                gestureSeekTotal.textContent=clock(video.duration);
+                gestureSeekFill.style.width=(100*seconds/video.duration).toFixed(1)+'%';
+                gestureSeek.hidden=false;
+              }
+              function updateGestureLevel(kind,value) {
+                var safe=clampLevel(value);
+                if(kind==='brightness')brightnessValue=safe;
+                else volumeValue=safe;
+                gestureLevelText.textContent=(kind==='brightness'?'☀ 亮度':'♪ 音量')+
+                  ' '+Math.round(safe*100)+'%';
+                gestureLevelFill.style.width=Math.round(safe*100)+'%';
+                gestureLevel.className=kind==='brightness'?'left':'right';
+                gestureLevel.hidden=false;
+                var now=Date.now(),g=activeGesture;
+                if(g && (!g.lastLevelReport || now-g.lastLevelReport>35 ||
+                    Math.abs(safe-g.lastReportedValue)>.045)) {
+                  g.lastLevelReport=now;g.lastReportedValue=safe;
+                  console.log('SUPJAV_HLS_LEVEL:'+kind+':'+safe.toFixed(3));
+                }
+              }
               function restoreHold() {
-                clearTimeout(holdTimer);
-                holdTimer=null;
+                clearTimeout(holdTimer);holdTimer=null;
                 if(previousHoldRate!==null) {
                   video.playbackRate=previousHoldRate;
                   previousHoldRate=null;
@@ -405,9 +458,11 @@ internal object BrowserHlsDocument {
                 }
               }
               function clearGesture(){
-                if(activeGesture && activeGesture.seeking){
+                if(activeGesture && activeGesture.mode==='seek'){
                   scrubbing=false;tick();
                 }
+                gestureSeek.hidden=true;
+                gestureLevel.hidden=true;
                 activeGesture=null;
                 restoreHold();
               }
@@ -416,22 +471,22 @@ internal object BrowserHlsDocument {
                 var box=gestureLayer.getBoundingClientRect();
                 var x=e.clientX-box.left,y=e.clientY-box.top;
                 var side=gestureSide(x,box.width);
-                // A second press must not fire the pending single-tap
-                // pause while the user is double-tapping or holding.
-                if(lastTap && side===lastTap.side &&
-                   Date.now()-lastTap.time<=330){
-                  clearTimeout(singleTapTimer);
-                  singleTapTimer=null;
+                if(lastTap && side===lastTap.side && Date.now()-lastTap.time<=330){
+                  clearTimeout(singleTapTimer);singleTapTimer=null;
                 }
                 activeGesture={id:e.pointerId,x:x,y:y,dx:0,dy:0,
                   width:box.width,height:box.height,side:side,
-                  seeking:false,moved:false,holding:false,
-                  startPosition:video.currentTime||0,preview:video.currentTime||0};
+                  mode:null,seeking:false,moved:false,holding:false,
+                  canSeek:chrome.classList.contains('hidden') ||
+                    y<box.height*.30 || y>box.height*.70,
+                  startPosition:video.currentTime||0,preview:video.currentTime||0,
+                  startLevel:x<box.width/2?brightnessValue:volumeValue,
+                  lastLevelReport:0,lastReportedValue:-1};
                 try{gestureLayer.setPointerCapture(e.pointerId);}catch(err){}
                 if(side!=='center'){
                   holdTimer=setTimeout(function(){
                     var g=activeGesture;
-                    if(!g || g.moved || g.seeking || g.holding)return;
+                    if(!g || g.moved || g.mode || g.holding)return;
                     g.holding=true;
                     clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
                     previousHoldRate=video.playbackRate;
@@ -445,50 +500,56 @@ internal object BrowserHlsDocument {
               gestureLayer.addEventListener('pointermove',function(e){
                 var g=activeGesture;
                 if(!g || e.pointerId!==g.id || g.holding)return;
-                var box=gestureLayer.getBoundingClientRect();
-                g.dx=(e.clientX-box.left)-g.x;
-                g.dy=(e.clientY-box.top)-g.y;
+                g.dx=e.clientX-gestureLayer.getBoundingClientRect().left-g.x;
+                g.dy=e.clientY-gestureLayer.getBoundingClientRect().top-g.y;
                 if(Math.abs(g.dx)>10 || Math.abs(g.dy)>10){
-                  g.moved=true;
-                  clearTimeout(holdTimer);holdTimer=null;
+                  g.moved=true;clearTimeout(holdTimer);holdTimer=null;
                 }
-                var emptyArea=g.y<g.height*.30 || g.y>g.height*.70;
-                if(!g.seeking && emptyArea && Number.isFinite(video.duration) &&
-                   video.duration>0 && Math.abs(g.dx)>12 &&
-                   Math.abs(g.dx)>Math.abs(g.dy)*1.25){
-                  g.seeking=true;
-                  scrubbing=true;
-                  clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
+                if(!g.mode && g.moved) {
+                  if(g.canSeek && Number.isFinite(video.duration) &&
+                     video.duration>0 && Math.abs(g.dx)>Math.abs(g.dy)*1.25){
+                    g.mode='seek';g.seeking=true;scrubbing=true;
+                  } else if(Math.abs(g.dy)>Math.abs(g.dx)*1.25){
+                    g.mode=g.x<g.width/2?'brightness':'volume';
+                  }
+                  if(g.mode){
+                    clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
+                    chromeVisible(false);
+                  }
                 }
-                if(g.seeking){
+                if(g.mode==='seek'){
                   e.preventDefault();
                   g.preview=Math.max(0,Math.min(video.duration,
                       g.startPosition+(g.dx/Math.max(g.width,1))*video.duration));
-                  current.textContent=clock(g.preview);
-                  progress.value=Math.round(g.preview/video.duration*1000);
-                  paintProgress();
-                  subtleFeedback('↔ '+clock(g.preview),'center',false);
+                  updateGestureSeek(g.preview);
+                } else if(g.mode==='brightness'||g.mode==='volume'){
+                  e.preventDefault();
+                  updateGestureLevel(g.mode,
+                    g.startLevel-(g.dy/Math.max(g.height,1))*1.25);
                 }
               });
               gestureLayer.addEventListener('pointerup',function(e){
                 var g=activeGesture;
                 if(!g || e.pointerId!==g.id)return;
-                var wasHolding=g.holding,wasSeeking=g.seeking,wasMoved=g.moved;
+                var mode=g.mode,holding=g.holding,moved=g.moved;
                 var target=g.preview,side=g.side;
-                clearGesture();
-                if(wasSeeking){
-                  scrubbing=false;
-                  if(Number.isFinite(video.duration)&&video.duration>0) {
-                    video.currentTime=target;
-                    reportProgress(true);
-                  }
-                  tick();chromeVisible(true);return;
+                if(mode==='brightness'||mode==='volume'){
+                  // Deliver the final exact level, not just the throttled one.
+                  var value=mode==='brightness'?brightnessValue:volumeValue;
+                  console.log('SUPJAV_HLS_LEVEL:'+mode+':'+value.toFixed(3));
                 }
-                if(wasHolding || wasMoved)return;
+                clearGesture();
+                if(mode==='seek'){
+                  if(Number.isFinite(video.duration)&&video.duration>0){
+                    video.currentTime=target;reportProgress(true);
+                  }
+                  tick();return;
+                }
+                if(mode || holding || moved)return;
                 var now=Date.now();
                 if(lastTap && now-lastTap.time<=330 &&
-                  lastTap.side===side && side!=='center' &&
-                  Math.hypot(lastTap.x-g.x,lastTap.y-g.y)<42){
+                   lastTap.side===side && side!=='center' &&
+                   Math.hypot(lastTap.x-g.x,lastTap.y-g.y)<42){
                   clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
                   skip(side==='left'?-seekAmount:seekAmount);
                   return;
@@ -500,7 +561,7 @@ internal object BrowserHlsDocument {
                 },330);
               });
               gestureLayer.addEventListener('pointercancel',function(){
-                if(activeGesture && activeGesture.seeking){scrubbing=false;tick();}
+                clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
                 clearGesture();
               });
               window.addEventListener('blur',clearGesture);

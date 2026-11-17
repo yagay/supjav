@@ -43,6 +43,12 @@ internal fun EmbeddedHlsPlayer(
     val context = LocalContext.current
     val app = context.applicationContext as? SupjavApp
     val activity = context as? Activity
+    val systemControls = remember(activity) {
+        activity?.let(::PlayerSystemControls)
+    }
+    DisposableEffect(systemControls) {
+        onDispose { systemControls?.restoreBrightness() }
+    }
     val resume by produceState<Long?>(initialValue = null, source.url, session) {
         value = session.restorePosition()
     }
@@ -59,7 +65,9 @@ internal fun EmbeddedHlsPlayer(
                     defaults?.getInt(PlaybackDefaults.SEEK, 10) ?: 10),
                 holdSpeed = PlaybackDefaults.holdSpeed(
                     defaults?.getFloat(PlaybackDefaults.HOLD, 2f) ?: 2f),
-                autoPlay = defaults?.getBoolean(PlaybackDefaults.AUTOPLAY, true) ?: true
+                autoPlay = defaults?.getBoolean(PlaybackDefaults.AUTOPLAY, true) ?: true,
+                initialBrightness = systemControls?.brightness() ?: 0.5f,
+                initialVolume = systemControls?.volume() ?: 0.5f
             )
         }
     }
@@ -149,6 +157,22 @@ internal fun EmbeddedHlsPlayer(
                 webChromeClient = object : WebChromeClient() {
                     override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
                         val raw = message?.message().orEmpty()
+                        if (raw.startsWith("SUPJAV_HLS_LEVEL:")) {
+                            val fields = raw.removePrefix("SUPJAV_HLS_LEVEL:").split(':')
+                            if (fields.size == 2) {
+                                val normalized = fields[1].toFloatOrNull()
+                                if (normalized != null && normalized.isFinite() &&
+                                    normalized in 0f..1f) {
+                                    runCatching {
+                                        when (fields[0]) {
+                                            "brightness" -> systemControls?.setBrightness(normalized)
+                                            "volume" -> systemControls?.setVolume(normalized)
+                                        }
+                                    }
+                                }
+                            }
+                            return true
+                        }
                         if (raw.startsWith("SUPJAV_HLS_PROGRESS:")) {
                             val fields = raw.removePrefix("SUPJAV_HLS_PROGRESS:").split(':')
                             if (fields.size == 3) {

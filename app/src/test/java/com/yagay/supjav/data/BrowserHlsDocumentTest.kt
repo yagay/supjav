@@ -58,7 +58,7 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("pointercancel"))
         assertTrue(html.contains("video.playbackRate=boostRate"))
         assertTrue(html.contains("previousHoldRate"))
-        assertTrue(html.contains("g.y<g.height*.30 || g.y>g.height*.70"))
+        assertTrue(html.contains("y<box.height*.30 || y>box.height*.70"))
         assertTrue(html.contains("singleTapTimer"))
         assertTrue(html.contains("onSurfaceTap();"))
         assertTrue(html.contains("skip(side==='left'?-seekAmount:seekAmount)"))
@@ -147,6 +147,23 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("skip(-seekAmount)"))
         assertTrue(html.contains("id=\"aspect\""))
         assertFalse(html.contains("token=secret"))
+    }
+
+    @Test fun hiddenControlsSupportFullSurfaceSeekingAndSideLevels() {
+        val html = requireNotNull(BrowserHlsDocument.render(PlaybackSource(
+            "https://cdn.example.com/master.m3u8?secret=hidden",
+            "application/x-mpegURL", "https://evsishere.xyz/embed/abc"
+        ), initialBrightness = 0.35f, initialVolume = 0.65f))
+        assertTrue(html.contains("id=\"gestureSeek\""))
+        assertTrue(html.contains("id=\"gestureLevel\""))
+        assertTrue(html.contains("chrome.classList.contains('hidden') ||"))
+        assertTrue(html.contains("g.mode='seek'"))
+        assertTrue(html.contains("g.mode=g.x<g.width/2?'brightness':'volume'"))
+        assertTrue(html.contains("SUPJAV_HLS_LEVEL:"))
+        assertTrue(html.contains("var brightnessValue = 0.35"))
+        assertTrue(html.contains("var volumeValue = 0.65"))
+        assertTrue(html.contains("updateGestureSeek(g.preview)"))
+        assertFalse(html.contains("secret=hidden"))
     }
 
     @Test fun rejectsMp4AndUnsafeHosts() {
