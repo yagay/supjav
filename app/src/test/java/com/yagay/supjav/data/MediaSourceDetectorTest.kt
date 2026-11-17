@@ -51,6 +51,23 @@ class MediaSourceDetectorTest {
         assertNotNull(session.fromNetworkRequest(video, "https://evsishere.xyz/e/player"))
     }
 
+    @Test fun admitsRedirectedPlayerDocumentOnlyWithSelectedReferrer() {
+        val session = SelectedMediaSession(site)
+        assertTrue(session.trustFrame(site, "https://lk1.supremejav.com/supjav.php?c=abc"))
+        assertTrue(session.admitDocument(
+            "https://evsishere.xyz/e/abc",
+            "https://lk1.supremejav.com/supjav.php?c=abc"))
+        assertNotNull(session.fromPageReport(
+            "https://evsishere.xyz", "https://evsishere.xyz/e/abc",
+            "https://cdn.example.com/hls3/master.txt"))
+        assertFalse(session.admitDocument(
+            "https://unrelated.example/e/player",
+            "https://advert.example/"))
+        assertFalse(session.admitDocument(
+            "https://redirect.example/ads/preroll",
+            "https://evsishere.xyz/e/abc"))
+    }
+
     @Test fun wrongFrameOriginAndHttpSubframesRejected() {
         val session = SelectedMediaSession(site)
         assertFalse(session.trustFrame(
