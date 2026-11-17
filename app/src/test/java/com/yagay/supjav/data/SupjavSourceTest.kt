@@ -222,6 +222,37 @@ class SupjavSourceTest {
         assertEquals(listOf("EVS", "LUC"), lines.map { it.name })
     }
 
+
+    @Test fun identifiesRealCdGroupsFromSourceButtons() {
+        val html = """
+          <div class="cd-group" data-part="CD1">
+            <div class="btnst">
+              <a data-link="evs1" class="btn-server">EVS</a>
+              <a data-link="luc1">LUC</a>
+            </div>
+          </div>
+          <h4>CD2</h4>
+          <div class="btnst">
+            <a data-link="evs2">EVS</a>
+            <a data-link="luc2">LUC</a>
+          </div>
+        """.trimIndent()
+        val entries = source.parseServers(html, "https://supjav.com/12345.html")
+        assertEquals(4, entries.size)
+        assertEquals(listOf("CD1", "CD1", "CD2", "CD2"), entries.map { it.part })
+        assertEquals(listOf("EVS", "LUC", "EVS", "LUC"), entries.map { it.name })
+        assertEquals(listOf("evs1", "luc1", "evs2", "luc2"), entries.map { it.link })
+    }
+
+    @Test fun multipleServerMirrorsWithoutCdLabelsStayUnpartitioned() {
+        val html = """
+          <div class="btnst"><a data-link="a">EVS</a><a data-link="b">LUC</a></div>
+        """.trimIndent()
+        val entries = source.parseServers(html, "https://supjav.com/12345.html")
+        assertEquals(2, entries.size)
+        assertTrue(entries.all { it.part == null })
+    }
+
     @Test fun rejectsLocalOrInsecureMediaTargets() {
         assertFalse(source.isPublicHttps("http://example.com/a.mp4"))
         assertFalse(source.isPublicHttps("https://localhost:1000/"))
