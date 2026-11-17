@@ -11,12 +11,14 @@ import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -358,11 +360,15 @@ fun PlayerScreen(
     var expandedSettings by remember { mutableStateOf(false) }
     var fill by remember { mutableStateOf(prefs.getBoolean("fill_video", false)) }
     var draggingSeek by remember { mutableStateOf(false) }
+    var gestureScrubbing by remember { mutableStateOf(false) }
+    var gesturePositionMs by remember { mutableLongStateOf(0L) }
+    var pressBoostOriginal by remember { mutableStateOf<Float?>(null) }
     var controlsVisible by remember { mutableStateOf(true) }
-    LaunchedEffect(controlsVisible, isPlaying, pip) {
-        if (controlsVisible && isPlaying && !pip && currentError == null) {
+    LaunchedEffect(controlsVisible, isPlaying, pip, gestureScrubbing, draggingSeek, pressBoostOriginal) {
+        if (controlsVisible && isPlaying && !pip && currentError == null &&
+            !gestureScrubbing && !draggingSeek && pressBoostOriginal == null) {
             delay(3_500)
-            if (!draggingSeek) controlsVisible = false
+            controlsVisible = false
         }
     }
     BackHandler(enabled = landscape && !pip) {
@@ -384,7 +390,11 @@ fun PlayerScreen(
             }
         }
         player.addListener(listener)
-        onDispose { player.removeListener(listener) }
+        onDispose {
+            pressBoostOriginal?.let { player.setPlaybackSpeed(it) }
+            pressBoostOriginal = null
+            player.removeListener(listener)
+        }
     }
     LaunchedEffect(player, pip) {
         while (true) {
@@ -421,19 +431,99 @@ fun PlayerScreen(
                 }
             )
             if (!pip) {
-                // The same gesture surface is used in portrait and landscape.
-                Box(Modifier.fillMaxSize().pointerInput(player, duration) {
-                    detectTapGestures(
-                        onTap = { controlsVisible = !controlsVisible },
-                        onDoubleTap = { offset ->
-                            val delta = if (offset.x < size.width / 2f) -10_000L else 10_000L
-                            val target = (player.currentPosition + delta).coerceAtLeast(0L)
-                                .coerceAtMost(if (duration > 0L) duration else Long.MAX_VALUE)
-                            player.seekTo(target)
-                            controlsVisible = true
+                // Top/bottom unused video regions act as a wide seeking
+                // touch target. Seeking is previewed while dragging, committed
+                // once on release to avoid repeated segment requests.
+                Box(
+                    Modifier.fillMaxSize()
+                        .pointerInput(player, duration) {
+                            var enabled = false
+                            var originMs = 0L
+                            var distance = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { offset ->
+                                    enabled = duration > 0L &&
+                                        (offset.y < size.height * .30f ||
+                                            offset.y > size.height * .70f)
+                                    if (enabled) {
+                                        originMs = player.currentPosition.coerceIn(0L, duration)
+                                        distance = 0f
+                                        gesturePositionMs = originMs
+                                        gestureScrubbing = true
+                                        controlsVisible = true
+                                    }
+                                },
+                                onHorizontalDrag = { change, amount ->
+                                    if (enabled) {
+                                        distance += amount
+                                        val deltaMs = (distance /
+                                            size.width.coerceAtLeast(1) * duration).toLong()
+                                        gesturePositionMs =
+                                            (originMs + deltaMs).coerceIn(0L, duration)
+                                        change.consume()
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (enabled) {
+                                        player.seekTo(gesturePositionMs)
+                                        gestureScrubbing = false
+                                        controlsVisible = true
+                                    }
+                                    enabled = false
+                                },
+                                onDragCancel = {
+                                    gestureScrubbing = false
+                                    enabled = false
+                                }
+                            )
                         }
-                    )
-                })
+                        .pointerInput(player, duration) {
+                            detectTapGestures(
+                                onTap = {
+                                    // Single tap controls playback, not UI opacity.
+                                    if (player.isPlaying) player.pause() else player.play()
+                                    controlsVisible = true
+                                },
+                                onDoubleTap = { offset ->
+                                    val deltaMs = when {
+                                        offset.x < size.width * .38f -> -10_000L
+                                        offset.x > size.width * .62f -> 10_000L
+                                        else -> 0L
+                                    }
+                                    if (deltaMs != 0L) {
+                                        val target = (player.currentPosition + deltaMs)
+                                            .coerceAtLeast(0L)
+                                            .coerceAtMost(if (duration > 0L) duration
+                                                else Long.MAX_VALUE)
+                                        player.seekTo(target)
+                                    }
+                                    controlsVisible = true
+                                },
+                                onLongPress = { offset ->
+                                    val onSide = offset.x < size.width * .38f ||
+                                        offset.x > size.width * .62f
+                                    if (onSide && pressBoostOriginal == null) {
+                                        pressBoostOriginal = player.playbackParameters.speed
+                                        player.setPlaybackSpeed(2f)
+                                        if (!player.isPlaying) player.play()
+                                        controlsVisible = true
+                                    }
+                                },
+                                onPress = {
+                                    try {
+                                        tryAwaitRelease()
+                                    } finally {
+                                        // Temporary 2x must never survive
+                                        // finger-up, cancellation or navigation.
+                                        pressBoostOriginal?.let { previous ->
+                                            player.setPlaybackSpeed(previous)
+                                        }
+                                        pressBoostOriginal = null
+                                    }
+                                }
+                            )
+                        }
+                )
             }
             if (!pip && isBuffering) {
                 CircularProgressIndicator(
@@ -447,6 +537,26 @@ fun PlayerScreen(
         Box(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
         ) {
+        if (!pip && gestureScrubbing) {
+            Text(
+                "调整进度  ${formatTime(gesturePositionMs)} / ${formatTime(duration)}",
+                modifier = Modifier.align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        if (!pip && pressBoostOriginal != null) {
+            Text(
+                "2× 倍速播放 · 松手恢复",
+                modifier = Modifier.align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
         if (!pip && (controlsVisible || currentError != null)) {
             IconButton(
                 onClick = { engine.savePosition(); onBack() },
@@ -483,8 +593,21 @@ fun PlayerScreen(
                         if (duration > 0L) player.seekTo(position)
                         draggingSeek = false
                     },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                    enabled = duration > 0L
+                    modifier = Modifier.fillMaxWidth().height(24.dp).padding(horizontal = 6.dp),
+                    enabled = duration > 0L,
+                    thumb = {
+                        Box(Modifier.size(10.dp).background(Color.White, CircleShape))
+                    },
+                    track = { slider ->
+                        SliderDefaults.Track(
+                            sliderState = slider,
+                            modifier = Modifier.height(3.dp),
+                            colors = SliderDefaults.colors(
+                                activeTrackColor = Color.White,
+                                inactiveTrackColor = Color.White.copy(alpha = .38f)
+                            )
+                        )
+                    }
                 )
                 Row(
                     Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
