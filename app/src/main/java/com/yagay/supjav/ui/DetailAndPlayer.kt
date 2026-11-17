@@ -50,7 +50,8 @@ fun DetailScreen(
     video: VideoItem,
     onVideo: (VideoItem) -> Unit,
     onPlay: () -> Unit,
-    onFilter: (FeedKind, String) -> Unit
+    onFilter: (FeedKind, String) -> Unit,
+    onWebPlay: (VideoServer) -> Unit
 ) {
     var detail by remember(video.id) { mutableStateOf<VideoDetail?>(null) }
     var error by remember(video.id) { mutableStateOf<String?>(null) }
@@ -58,6 +59,7 @@ fun DetailScreen(
     var favorite by remember(video.id) { mutableStateOf(false) }
     var resolving by remember(video.id) { mutableStateOf<String?>(null) }
     var playbackError by remember(video.id) { mutableStateOf<String?>(null) }
+    var failedServer by remember(video.id) { mutableStateOf<VideoServer?>(null) }
     var lineSheet by remember(video.id) { mutableStateOf(false) }
     var request by remember(video.id) { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
@@ -92,6 +94,7 @@ fun DetailScreen(
     fun play(server: VideoServer) {
         if (resolving != null) return
         lineSheet = false
+        failedServer = null
         playbackError = null
         resolving = server.id
         Diagnostics.log("PLAY_SELECTED video=" + video.id + " line=" + server.name +
@@ -104,11 +107,13 @@ fun DetailScreen(
                         onPlay()
                     }
                     is ResolveResult.Unavailable -> {
+                        failedServer = server
                         playbackError = result.reason
                         Diagnostics.log("PLAY_SOURCE_UNAVAILABLE video=" + video.id +
                             " line=" + server.name + " reason=" + result.reason)
                     }
                     ResolveResult.VerificationRequired -> {
+                        failedServer = server
                         playbackError = "此播放源需要真人验证，尚不支持原生播放"
                         Diagnostics.log("PLAY_VERIFICATION_REQUIRED video=" + video.id +
                             " line=" + server.name)
@@ -117,6 +122,7 @@ fun DetailScreen(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                failedServer = server
                 playbackError = e.message ?: "播放器启动失败"
             } finally {
                 resolving = null
@@ -232,6 +238,19 @@ fun DetailScreen(
                             .onFailure { playbackError = "日志导出失败：" +
                                 it.javaClass.simpleName }
                     }) { Text("导出这次失败的诊断 ZIP") }
+                    failedServer?.let { failed ->
+                        if (!playbackError.orEmpty().contains("真人验证")) {
+                            OutlinedButton(onClick = {
+                                Diagnostics.log("PLAY_WEB_COMPAT_SELECTED video=" + video.id +
+                                    " line=" + failed.name)
+                                onWebPlay(failed)
+                            }) {
+                                Icon(Icons.Outlined.OpenInBrowser, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("使用网页兼容模式播放此线路")
+                            }
+                        }
+                    }
                 }
             }
             if (d.servers.isEmpty()) {
