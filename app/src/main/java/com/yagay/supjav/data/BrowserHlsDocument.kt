@@ -100,9 +100,9 @@ internal object BrowserHlsDocument {
             .actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:center;gap:6px;margin-top:4px}
             .pill{height:37px;min-width:0;width:100%;padding:0 3px;border-radius:19px;background:rgba(255,255,255,.14);font-size:12px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
             #speed{font-variant-numeric:tabular-nums}
-            #cdRow{display:flex;align-items:center;gap:7px;overflow-x:auto;white-space:nowrap;padding:2px 0 6px;scrollbar-width:none}
-            #cdRow span{font-size:12px;color:rgba(255,255,255,.77);margin-right:2px}
-            #cdRow .cd-button{flex-shrink:0;min-height:30px;padding:0 12px;border-radius:9px;background:rgba(255,255,255,.15);font-size:12px;font-weight:600}
+            #cdRow{display:flex;align-items:center;gap:4px;overflow-x:auto;white-space:nowrap;padding:0 0 3px;scrollbar-width:none}
+            #cdRow span{font-size:11px;color:rgba(255,255,255,.77);margin-right:0}
+            #cdRow .cd-button{flex:0 0 auto;min-height:26px;min-width:0;padding:0 8px;border-radius:7px;background:rgba(255,255,255,.15);font-size:11px;font-weight:600}
             #cdRow .cd-button.selected{background:rgba(255,255,255,.35);color:#fff;opacity:1}
             @media(max-width:350px){.actions{grid-template-columns:repeat(4,minmax(0,1fr))}}
             [hidden]{display:none!important}
