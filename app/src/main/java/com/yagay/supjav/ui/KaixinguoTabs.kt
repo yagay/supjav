@@ -18,6 +18,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.BugReport
+import com.yagay.supjav.util.Diagnostics
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarOutline
@@ -284,6 +286,10 @@ fun MinePage(
                 SupjavSectionTitle("我的", "最近观看和本地收藏")
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { refresh++ }) { Text("刷新") }
+                IconButton(onClick = {
+                    runCatching { Diagnostics.share(app) }
+                        .onFailure { Diagnostics.log("EXPORT_FAILED " + it.javaClass.simpleName) }
+                }) { Icon(Icons.Outlined.BugReport, "导出诊断 ZIP") }
                 IconButton(onClick = onSettings) {
                     Icon(Icons.Outlined.Settings, "打开设置")
                 }
