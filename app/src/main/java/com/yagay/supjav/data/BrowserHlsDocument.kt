@@ -238,7 +238,7 @@ internal object BrowserHlsDocument {
                 speedIndex=(speedIndex+1)%speedList.length;
                 video.playbackRate=speedList[speedIndex];
                 speed.textContent=speedList[speedIndex].toFixed(2).replace(/0+$/,'').replace(/\.$/,'')+'×';
-                message('速度 '+speed.textContent);chromeVisible(true);
+                subtleFeedback(speed.textContent,'right',false);chromeVisible(true);
               });
               progress.addEventListener('input',function(){
                 if(progress.disabled)return;
@@ -258,6 +258,7 @@ internal object BrowserHlsDocument {
               var gestureLayer = document.getElementById('gestures');
               var activeGesture = null, holdTimer = null, singleTapTimer = null;
               var lastTap = null, previousHoldRate = null;
+              var holdWasPaused = false;
               function gestureSide(x,width) {
                 return x < width*.38 ? 'left' : x > width*.62 ? 'right' : 'center';
               }
@@ -267,6 +268,8 @@ internal object BrowserHlsDocument {
                 if(previousHoldRate!==null) {
                   video.playbackRate=previousHoldRate;
                   previousHoldRate=null;
+                  if(holdWasPaused)video.pause();
+                  holdWasPaused=false;
                   clearSubtleFeedback();
                 }
               }
@@ -301,6 +304,7 @@ internal object BrowserHlsDocument {
                     g.holding=true;
                     clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
                     previousHoldRate=video.playbackRate;
+                    holdWasPaused=video.paused;
                     video.playbackRate=2;
                     if(video.paused)video.play().catch(function(){});
                     subtleFeedback('2×',side,true);

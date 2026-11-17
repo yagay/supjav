@@ -365,6 +365,7 @@ fun PlayerScreen(
     var gesturePositionMs by remember { mutableLongStateOf(0L) }
     var pressBoostOriginal by remember { mutableStateOf<Float?>(null) }
     var pressBoostSide by remember { mutableIntStateOf(0) }
+    var pressBoostWasPaused by remember { mutableStateOf(false) }
     var gestureFlash by remember { mutableStateOf<String?>(null) }
     var gestureFlashSide by remember { mutableIntStateOf(0) }
     var gestureFlashVersion by remember { mutableIntStateOf(0) }
@@ -408,7 +409,9 @@ fun PlayerScreen(
         player.addListener(listener)
         onDispose {
             pressBoostOriginal?.let { player.setPlaybackSpeed(it) }
+            if (pressBoostWasPaused) player.pause()
             pressBoostOriginal = null
+            pressBoostWasPaused = false
             pressBoostSide = 0
             player.removeListener(listener)
         }
@@ -527,6 +530,7 @@ fun PlayerScreen(
                                         offset.x > size.width * .62f
                                     if (onSide && pressBoostOriginal == null) {
                                         pressBoostOriginal = player.playbackParameters.speed
+                                        pressBoostWasPaused = !player.isPlaying
                                         pressBoostSide = if (offset.x < size.width / 2f) -1 else 1
                                         player.setPlaybackSpeed(2f)
                                         if (!player.isPlaying) player.play()
@@ -541,7 +545,9 @@ fun PlayerScreen(
                                         pressBoostOriginal?.let { previous ->
                                             player.setPlaybackSpeed(previous)
                                         }
+                                        if (pressBoostWasPaused) player.pause()
                                         pressBoostOriginal = null
+                                        pressBoostWasPaused = false
                                         pressBoostSide = 0
                                     }
                                 }
