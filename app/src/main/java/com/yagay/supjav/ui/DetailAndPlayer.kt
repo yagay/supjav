@@ -403,7 +403,7 @@ fun PlayerScreen(
                         )
                         this.player = player
                         useController = false
-                        keepScreenOn = true
+                        keepScreenOn = isPlaying
                         setKeepContentOnPlayerReset(true)
                         resizeMode = if (fill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                             else AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -412,6 +412,7 @@ fun PlayerScreen(
                 update = {
                     it.player = player
                     it.useController = false
+                    it.keepScreenOn = isPlaying
                     it.resizeMode = if (fill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         else AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }

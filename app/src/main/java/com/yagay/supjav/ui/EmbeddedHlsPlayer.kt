@@ -98,6 +98,7 @@ internal fun EmbeddedHlsPlayer(
             WebView(context).apply {
                 webView = this
                 session.attach(this)
+                keepScreenOn = session.isPlaying
                 setBackgroundColor(android.graphics.Color.BLACK)
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
@@ -188,6 +189,7 @@ internal fun EmbeddedHlsPlayer(
                     null
                 )
             }
-        }
+        },
+        update = { it.keepScreenOn = session.isPlaying }
     )
 }
