@@ -5,6 +5,7 @@ import com.yagay.supjav.data.LibraryStore
 import com.yagay.supjav.data.PlaybackResolver
 import com.yagay.supjav.data.SupjavSource
 import com.yagay.supjav.player.PlaybackEngine
+import com.yagay.supjav.player.WebPlaybackSession
 import com.yagay.supjav.data.FeedCache
 import com.yagay.supjav.data.SearchStore
 import com.yagay.supjav.data.CategoryStore
@@ -18,6 +19,7 @@ class SupjavApp : Application() {
     val searchStore by lazy { SearchStore(this) }
     val categoryStore by lazy { CategoryStore(this) }
     val playerEngine by lazy { PlaybackEngine(this, library) }
+    val webPlayback by lazy { WebPlaybackSession(library) }
     val preferences by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
 
     override fun onCreate() {
