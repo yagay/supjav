@@ -414,8 +414,10 @@ fun PlayerScreen(
     onWebFallback: (() -> Unit)? = null,
     onShowLinePicker: () -> Unit = {},
     onShowPartPicker: () -> Unit = {},
+    onSelectPart: (String) -> Unit = {},
     availableParts: List<String> = emptyList(),
-    activePart: String? = null
+    activePart: String? = null,
+    partSwitching: Boolean = false
 ) {
     val engine = app.playerEngine
     val player = engine.player
@@ -887,6 +889,46 @@ fun PlayerScreen(
             ) {
                 Text(video?.title ?: "正在播放", style = MaterialTheme.typography.titleMedium,
                     maxLines = 1, color = Color.White, overflow = TextOverflow.Ellipsis)
+                // A CD is a separate video segment, NOT a playback mirror.
+                // Place its selection directly on the player rather than
+                // hiding it among the EVS/ST/VOE/LUC/VAS line buttons.
+                if (availableParts.size > 1) {
+                    LazyRow(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        item {
+                            Text("分段", color = Color.White.copy(alpha = .75f),
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                        items(availableParts) { part ->
+                            val selected = part == activePart
+                            TextButton(
+                                onClick = { onSelectPart(part) },
+                                enabled = !partSwitching && !selected,
+                                modifier = Modifier.height(32.dp)
+                                    .background(
+                                        if (selected) Color.White.copy(alpha = .32f)
+                                        else Color.White.copy(alpha = .13f),
+                                        RoundedCornerShape(10.dp)
+                                    ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                            ) {
+                                Text(part, color = Color.White,
+                                    style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                        if (partSwitching) {
+                            item {
+                                CircularProgressIndicator(
+                                    Modifier.size(16.dp), strokeWidth = 2.dp,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(formatTime(position), style = MaterialTheme.typography.labelSmall,
                         color = Color.White)
