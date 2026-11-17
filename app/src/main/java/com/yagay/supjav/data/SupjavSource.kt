@@ -383,7 +383,10 @@ class SupjavSource {
                 " parts=" + parts.size + " perPart=" +
                 parts.joinToString(",") { part ->
                     part + ":" + grouped.count { VideoParts.partOf(it) == part }
-                } + " inferred=" + (grouped !== servers))
+                } + " inferred=" + (grouped !== servers) +
+                " providers=" + grouped.take(20).joinToString(",") {
+                    SupjavLine.of(it.name).name
+                })
             return grouped
         }
         return doc.select(
