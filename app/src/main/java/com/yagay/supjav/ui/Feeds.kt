@@ -152,11 +152,18 @@ fun FeedScreen(
         pageState.error = null
         try {
             val next = app.source.list(kind, value, pageState.page + 1)
-            val unseen = next.filterNot { item -> data.any { it.id == item.id } }
+            val knownIds = data.mapTo(HashSet(data.size + next.size)) { it.id }
+            val unseen = next.filter { knownIds.add(it.id) }
             data.addAll(unseen)
             pageState.page++
             pageState.loaded = true
-            if (next.isEmpty() || unseen.isEmpty()) pageState.endReached = true
+            // One duplicate page is not the end of a paginated feed. Two
+            // consecutive duplicate pages are a bounded protection against
+            // endlessly cycling websites.
+            pageState.duplicatePageStreak = if (next.isNotEmpty() && unseen.isEmpty())
+                pageState.duplicatePageStreak + 1 else 0
+            if (next.isEmpty() || pageState.duplicatePageStreak >= 2)
+                pageState.endReached = true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

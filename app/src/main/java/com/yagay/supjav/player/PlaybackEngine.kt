@@ -176,7 +176,8 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
         val position = if (player.duration > 0 &&
             player.currentPosition >= player.duration - 5_000L) 0L
             else player.currentPosition.coerceAtLeast(0L)
-        library.saveHistory(video, position)
+        // Avoid synchronous SQLite writes from Player callbacks or Activity.onStop.
+        scope.launch(Dispatchers.IO) { library.saveHistory(video, position) }
     }
 
     fun stop() {

@@ -35,6 +35,7 @@ class FeedPageState {
     var loading by mutableStateOf(false)
     var endReached by mutableStateOf(false)
     var loaded by mutableStateOf(false)
+    var duplicatePageStreak by mutableIntStateOf(0)
     var error by mutableStateOf<String?>(null)
     var firstVisibleIndex = 0
     var firstVisibleOffset = 0
