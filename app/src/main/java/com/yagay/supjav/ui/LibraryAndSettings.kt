@@ -1,5 +1,7 @@
 package com.yagay.supjav.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -14,10 +16,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.PlayCircleOutline
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.PictureInPictureAlt
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.yagay.supjav.SupjavApp
 import com.yagay.supjav.player.VideoQualityPolicy
@@ -88,14 +100,96 @@ fun LibraryScreen(
     }
 }
 
+
+private enum class SettingsCategory(
+    val title: String, val description: String
+) {
+    HOME("设置", ""),
+    QUALITY("视频画质", "默认清晰度和画质选择策略"),
+    PLAYBACK("播放默认", "播放速度、画面比例、线路、续播"),
+    GESTURES("手势与控制", "双击跳转和长按倍速"),
+    BACKGROUND("后台与小窗", "后台暂停、画中画与网页兼容"),
+    APPEARANCE("外观与启动", "启动页面、主题与封面列数"),
+    DATA("数据与诊断", "导出日志、管理播放历史")
+}
+
+private data class SettingsOption(val value: String, val label: String)
+
 @Composable
-fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
+private fun SettingsCategoryRow(
+    title: String, subtitle: String, icon: ImageVector,
+    summary: String, onClick: () -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(title, style = MaterialTheme.typography.bodyLarge) },
+        supportingContent = { Text(subtitle, maxLines = 1) },
+        leadingContent = {
+            Icon(icon, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary)
+        },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(summary, maxLines = 1, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Outlined.ChevronRight, contentDescription = null)
+            }
+        },
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun SettingsValueRow(
+    title: String, value: String, subtitle: String = "",
+    onClick: () -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = if (subtitle.isBlank()) null else {
+            { Text(subtitle, style = MaterialTheme.typography.bodySmall) }
+        },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(value, color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyMedium)
+                Icon(Icons.Outlined.ChevronRight, contentDescription = null,
+                    modifier = Modifier.size(18.dp))
+            }
+        },
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(SupjavMetrics.cardRadius),
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(Modifier.fillMaxWidth(), content = content)
+    }
+}
+
+@Composable
+fun SettingsScreen(
+    app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit,
+    onExit: () -> Unit
+) {
     val prefs = app.preferences
+    var category by rememberSaveable { mutableStateOf(SettingsCategory.HOME) }
+    var picker by remember { mutableStateOf<String?>(null) }
     var pauseOnBackground by remember {
         mutableStateOf(prefs.getBoolean("pause_on_background", true))
     }
     var autoPip by remember { mutableStateOf(prefs.getBoolean("auto_pip", false)) }
     var showPip by remember { mutableStateOf(prefs.getBoolean("manual_pip", true)) }
+    var autoWebFallback by remember {
+        mutableStateOf(prefs.getBoolean("auto_web_fallback", true))
+    }
     val posterColumns = app.posterColumns
     val qualityPreference = app.videoQuality
     var defaultSpeed by remember {
@@ -127,319 +221,404 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
         mutableStateOf(PlaybackDefaults.startup(
             prefs.getString(PlaybackDefaults.START_TAB, "RECOMMEND")))
     }
-    var autoWebFallback by remember {
-        mutableStateOf(prefs.getBoolean("auto_web_fallback", true))
-    }
     var confirmClear by remember { mutableStateOf(false) }
     var logError by remember { mutableStateOf<String?>(null) }
-    var showLogs by remember { mutableStateOf(false) }
-    var logPreview by remember { mutableStateOf("") }
-    var confirmClearLogs by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        SupjavSectionTitle("播放与窗口")
-        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
-            color = MaterialTheme.colorScheme.surface) {
-            Column {
-                SupjavSettingToggle(
-                    "网页脚本线路自动兼容",
-                    "原生解析无法处理线路参数时，自动打开网站播放器并尝试识别 MP4/HLS",
-                    autoWebFallback
-                ) {
-                    autoWebFallback = it
-                    prefs.edit().putBoolean("auto_web_fallback", it).apply()
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SupjavSettingToggle("离开应用自动暂停",
-                    "切换应用、回桌面或锁屏时暂停视频；返回原播放页面后手动继续",
-                    pauseOnBackground) {
-                    pauseOnBackground = it
-                    prefs.edit().putBoolean("pause_on_background", it).apply()
-                    // Automatic PiP must not undermine a background pause.
-                    if (it) {
-                        autoPip = false
-                        prefs.edit().putBoolean("auto_pip", false).apply()
-                    }
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SupjavSettingToggle("离开 App 自动画中画",
-                    if (pauseOnBackground) "关闭自动暂停后才可使用，手动小窗不受影响"
-                    else "仅在视频正在播放时尝试进入系统画中画",
-                    autoPip && !pauseOnBackground) {
-                    if (!pauseOnBackground) {
-                        autoPip = it
-                        prefs.edit().putBoolean("auto_pip", it).apply()
-                    }
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SupjavSettingToggle("显示手动画中画入口",
-                    "控制播放器右上角的小窗图标", showPip) {
-                    showPip = it
-                    prefs.edit().putBoolean("manual_pip", it).apply()
-                }
-            }
-        }
-        SupjavSectionTitle("默认视频画质")
-        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
-            color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("默认优先最高可用画质。画质列表以当前播放源实际提供的清晰度为准；网络不足时建议使用自动。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf("highest", "auto", "p1080", "p720", "p480").forEach { mode ->
-                        FilterChip(
-                            selected = qualityPreference == mode,
-                            onClick = { app.updateVideoQuality(mode) },
-                            label = { Text(VideoQualityPolicy.label(mode)) }
-                        )
-                    }
-                }
-            }
-        }
-        SupjavSectionTitle("默认播放行为")
-        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
-            color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("进入视频时使用这些默认值。播放器内临时调整速度和比例不会修改默认设置。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("默认播放速度", style = MaterialTheme.typography.titleSmall)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PlaybackDefaults.speeds.forEach { value ->
-                        FilterChip(
-                            selected = defaultSpeed == value,
-                            onClick = {
-                                defaultSpeed = value
-                                prefs.edit().putFloat(PlaybackDefaults.SPEED, value).apply()
-                            }, label = { Text(PlaybackDefaults.speedLabel(value)) }
-                        )
-                    }
-                }
-                HorizontalDivider()
-                Text("默认画面比例", style = MaterialTheme.typography.titleSmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !defaultFill, onClick = {
-                        defaultFill = false
-                        prefs.edit().putBoolean(PlaybackDefaults.FIT, false).apply()
-                    }, label = { Text("适应画面") })
-                    FilterChip(selected = defaultFill, onClick = {
-                        defaultFill = true
-                        prefs.edit().putBoolean(PlaybackDefaults.FIT, true).apply()
-                    }, label = { Text("铺满画面") })
-                }
-                HorizontalDivider()
-                Text("首选播放线路", style = MaterialTheme.typography.titleSmall)
-                Text("点击「立即播放」时优先选择；没有对应线路则使用网站首条。手动切换线路不受影响。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PlaybackDefaults.lineOptions.forEach { line ->
-                        FilterChip(
-                            selected = preferredLine == line,
-                            onClick = {
-                                preferredLine = line
-                                prefs.edit().putString(PlaybackDefaults.LINE, line).apply()
-                            },
-                            label = { Text(if (line == "auto") "网站首条" else line) }
-                        )
-                    }
-                }
-                HorizontalDivider()
-                SupjavSettingToggle(
-                    "自动开始播放", "原生播放器和内置 HLS 使用；第三方网站播放器可能自行自动播放",
-                    autoplay
-                ) {
-                    autoplay = it
-                    prefs.edit().putBoolean(PlaybackDefaults.AUTOPLAY, it).apply()
-                }
-                SupjavSettingToggle(
-                    "自动恢复上次进度", "重新打开视频时从历史位置续播；临时切换线路仍保留当前进度",
-                    resumePlayback
-                ) {
-                    resumePlayback = it
-                    prefs.edit().putBoolean(PlaybackDefaults.RESUME, it).apply()
-                }
-            }
-        }
-        SupjavSectionTitle("默认手势与控制")
-        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
-            color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("双击快进／快退", style = MaterialTheme.typography.titleSmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PlaybackDefaults.seekSeconds.forEach { seconds ->
-                        FilterChip(
-                            selected = skipSeconds == seconds,
-                            onClick = {
-                                skipSeconds = seconds
-                                prefs.edit().putInt(PlaybackDefaults.SEEK, seconds).apply()
-                            }, label = { Text(seconds.toString() + " 秒") }
-                        )
-                    }
-                }
-                HorizontalDivider()
-                Text("长按两侧播放倍速", style = MaterialTheme.typography.titleSmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PlaybackDefaults.holdSpeeds.forEach { value ->
-                        FilterChip(
-                            selected = holdSpeed == value,
-                            onClick = {
-                                holdSpeed = value
-                                prefs.edit().putFloat(PlaybackDefaults.HOLD, value).apply()
-                            }, label = { Text(PlaybackDefaults.speedLabel(value)) }
-                        )
-                    }
-                }
-            }
-        }
-        OutlinedButton(
-            onClick = {
-                defaultSpeed = 1f
-                holdSpeed = 2f
-                skipSeconds = 10
-                defaultFill = false
-                preferredLine = "auto"
-                autoplay = true
-                resumePlayback = true
-                prefs.edit()
-                    .remove(PlaybackDefaults.SPEED)
-                    .remove(PlaybackDefaults.HOLD)
-                    .remove(PlaybackDefaults.SEEK)
-                    .remove(PlaybackDefaults.FIT)
-                    .remove(PlaybackDefaults.LINE)
-                    .remove(PlaybackDefaults.AUTOPLAY)
-                    .remove(PlaybackDefaults.RESUME)
-                    .apply()
-                app.updateVideoQuality(VideoQualityPolicy.DEFAULT)
-            }, modifier = Modifier.fillMaxWidth()
-        ) { Text("恢复默认播放设置") }
-        Text("仅重置播放画质、速度、比例、线路、手势和续播选项，不影响收藏与历史。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        SupjavSectionTitle("启动与外观")
-        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
-            color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("应用默认打开页面", style = MaterialTheme.typography.titleSmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(
-                        "RECOMMEND" to "首页", "CATEGORY" to "分类",
-                        "RANK" to "排行", "MINE" to "我的"
-                    ).forEach { (key, label) ->
-                        FilterChip(
-                            selected = startTab == key,
-                            onClick = {
-                                startTab = key
-                                prefs.edit().putString(PlaybackDefaults.START_TAB, key).apply()
-                            }, label = { Text(label) }
-                        )
-                    }
-                }
-                Text("下次重新启动 App 生效；恢复中的播放页面优先保留。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        SupjavSectionTitle("外观")
-        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
-            color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SupjavSettingToggle("深色模式", "全应用统一主题", dark, onDark)
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text("视频封面列数", style = MaterialTheme.typography.titleSmall)
-                Text("选择海报密度，所有视频列表统一生效",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(0 to "自动", 2 to "2列", 3 to "3列", 4 to "4列").forEach { (count, label) ->
-                        FilterChip(
-                            selected = posterColumns == count,
-                            onClick = { app.updatePosterColumns(count) },
-                            label = { Text(label) }
-                        )
-                    }
-                }
-            }
-        }
-        SupjavSectionTitle("数据与诊断")
-        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
-            color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        logError = null
-                        runCatching { Diagnostics.share(context) }
-                            .onFailure { logError = it.message ?: "导出日志失败" }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Outlined.BugReport, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("导出诊断 ZIP")
-                }
-                OutlinedButton(
-                    onClick = { confirmClear = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Outlined.DeleteOutline, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("清空播放历史")
-                }
-                if (logError != null) Text(logError.orEmpty(), color = MaterialTheme.colorScheme.error)
-            }
-        }
-        Text("Supjav Native · Android / Compose / Media3",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("第三方播放需要验证或不支持原生读取时，会明确显示失败原因。不会绕过网站访问控制。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    BackHandler(enabled = category != SettingsCategory.HOME && picker == null) {
+        category = SettingsCategory.HOME
     }
-    if (showLogs) AlertDialog(
-        onDismissRequest = { showLogs = false },
-        title = { Text("最近诊断事件") },
-        text = {
-            Text(logPreview, Modifier.heightIn(max = 420.dp)
-                .verticalScroll(rememberScrollState()),
-                style = MaterialTheme.typography.bodySmall)
-        },
-        confirmButton = { TextButton(onClick = { showLogs = false }) { Text("关闭") } },
-        dismissButton = {
-            TextButton(onClick = {
-                showLogs = false
-                runCatching { Diagnostics.share(context) }
-                    .onFailure { logError = it.message ?: "导出日志失败" }
-            }) { Text("导出 ZIP") }
+    fun resetPlayback() {
+        defaultSpeed = 1f
+        holdSpeed = 2f
+        skipSeconds = 10
+        defaultFill = false
+        preferredLine = "auto"
+        autoplay = true
+        resumePlayback = true
+        prefs.edit()
+            .remove(PlaybackDefaults.SPEED)
+            .remove(PlaybackDefaults.HOLD)
+            .remove(PlaybackDefaults.SEEK)
+            .remove(PlaybackDefaults.FIT)
+            .remove(PlaybackDefaults.LINE)
+            .remove(PlaybackDefaults.AUTOPLAY)
+            .remove(PlaybackDefaults.RESUME)
+            .apply()
+        app.updateVideoQuality(VideoQualityPolicy.DEFAULT)
+    }
+
+    val pickerOptions = when (picker) {
+        "quality" -> listOf("highest", "auto", "p1080", "p720", "p480").map {
+            SettingsOption(it, VideoQualityPolicy.label(it))
         }
-    )
-    if (confirmClearLogs) AlertDialog(
-        onDismissRequest = { confirmClearLogs = false },
-        title = { Text("清除诊断日志？") },
-        text = { Text("将删除 App 保存的诊断事件，但不会清空收藏和播放历史。") },
-        confirmButton = {
-            TextButton(onClick = {
-                Diagnostics.clear()
-                confirmClearLogs = false
-            }) { Text("清除") }
-        },
-        dismissButton = { TextButton(onClick = { confirmClearLogs = false }) { Text("取消") } }
-    )
+        "speed" -> PlaybackDefaults.speeds.map {
+            SettingsOption(it.toString(), PlaybackDefaults.speedLabel(it))
+        }
+        "fill" -> listOf(SettingsOption("fit", "适应画面"), SettingsOption("zoom", "铺满画面"))
+        "line" -> PlaybackDefaults.lineOptions.map {
+            SettingsOption(it, if (it == "auto") "网站首条" else it)
+        }
+        "seek" -> PlaybackDefaults.seekSeconds.map {
+            SettingsOption(it.toString(), it.toString() + " 秒")
+        }
+        "hold" -> PlaybackDefaults.holdSpeeds.map {
+            SettingsOption(it.toString(), PlaybackDefaults.speedLabel(it))
+        }
+        "startup" -> listOf(
+            SettingsOption("RECOMMEND", "首页"),
+            SettingsOption("CATEGORY", "分类"),
+            SettingsOption("RANK", "排行"),
+            SettingsOption("MINE", "我的")
+        )
+        "columns" -> listOf(
+            SettingsOption("0", "自动"), SettingsOption("2", "2 列"),
+            SettingsOption("3", "3 列"), SettingsOption("4", "4 列")
+        )
+        else -> emptyList()
+    }
+    val pickerSelected = when (picker) {
+        "quality" -> qualityPreference
+        "speed" -> defaultSpeed.toString()
+        "fill" -> if (defaultFill) "zoom" else "fit"
+        "line" -> preferredLine
+        "seek" -> skipSeconds.toString()
+        "hold" -> holdSpeed.toString()
+        "startup" -> startTab
+        "columns" -> posterColumns.toString()
+        else -> ""
+    }
+    val pickerTitle = when (picker) {
+        "quality" -> "默认视频画质"
+        "speed" -> "默认播放速度"
+        "fill" -> "默认画面比例"
+        "line" -> "首选播放线路"
+        "seek" -> "双击快进／快退"
+        "hold" -> "长按两侧倍速"
+        "startup" -> "应用默认打开页面"
+        "columns" -> "视频封面列数"
+        else -> ""
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        SupjavHeader(category.title, onBack = {
+            when {
+                picker != null -> picker = null
+                category != SettingsCategory.HOME -> category = SettingsCategory.HOME
+                else -> onExit()
+            }
+        })
+        key(category) {
+            Column(
+                Modifier.fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                when (category) {
+                    SettingsCategory.HOME -> {
+                        Text("按类别管理默认设置",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp))
+                        SettingsCard {
+                            SettingsCategoryRow(
+                                "视频画质", "清晰度优先级",
+                                Icons.Outlined.PlayCircleOutline,
+                                VideoQualityPolicy.label(qualityPreference)
+                            ) { category = SettingsCategory.QUALITY }
+                            HorizontalDivider()
+                            SettingsCategoryRow(
+                                "播放默认", "速度、比例、线路、自动播放与续播",
+                                Icons.Outlined.Tune,
+                                PlaybackDefaults.speedLabel(defaultSpeed)
+                            ) { category = SettingsCategory.PLAYBACK }
+                            HorizontalDivider()
+                            SettingsCategoryRow(
+                                "手势与控制", "快进快退、长按倍速",
+                                Icons.Outlined.TouchApp,
+                                skipSeconds.toString() + " 秒"
+                            ) { category = SettingsCategory.GESTURES }
+                            HorizontalDivider()
+                            SettingsCategoryRow(
+                                "后台与小窗", "后台暂停、画中画、线路兼容",
+                                Icons.Outlined.PictureInPictureAlt,
+                                if (pauseOnBackground) "自动暂停" else "保持播放"
+                            ) { category = SettingsCategory.BACKGROUND }
+                            HorizontalDivider()
+                            SettingsCategoryRow(
+                                "外观与启动", "主题、默认页面、封面排列",
+                                Icons.Outlined.Palette,
+                                if (dark) "深色" else "浅色"
+                            ) { category = SettingsCategory.APPEARANCE }
+                            HorizontalDivider()
+                            SettingsCategoryRow(
+                                "数据与诊断", "导出日志、清空播放历史",
+                                Icons.Outlined.Storage, ""
+                            ) { category = SettingsCategory.DATA }
+                        }
+                        Text("设置自动保存；进入二级页面即可修改。播放器内的临时调整不覆盖默认播放配置。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp))
+                    }
+
+                    SettingsCategory.QUALITY -> {
+                        SettingsCard {
+                            SettingsValueRow(
+                                "默认视频画质", VideoQualityPolicy.label(qualityPreference),
+                                "选择最高可用、自动或指定分辨率"
+                            ) { picker = "quality" }
+                        }
+                        Text("最高可用仅表示当前视频源实际提供的最高分辨率。原生与内置 HLS 可以切换；第三方网页播放器仍由网站控制。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp))
+                    }
+
+                    SettingsCategory.PLAYBACK -> {
+                        SettingsCard {
+                            SettingsValueRow(
+                                "默认播放速度", PlaybackDefaults.speedLabel(defaultSpeed)
+                            ) { picker = "speed" }
+                            HorizontalDivider()
+                            SettingsValueRow(
+                                "默认画面比例", if (defaultFill) "铺满" else "适应"
+                            ) { picker = "fill" }
+                            HorizontalDivider()
+                            SettingsValueRow(
+                                "首选播放线路",
+                                if (preferredLine == "auto") "网站首条" else preferredLine,
+                                "优先尝试首选线路；不可用则回退到网站首条"
+                            ) { picker = "line" }
+                            HorizontalDivider()
+                            SupjavSettingToggle(
+                                "自动开始播放",
+                                "原生与内置 HLS 生效；第三方网页可能自行播放",
+                                autoplay
+                            ) {
+                                autoplay = it
+                                prefs.edit().putBoolean(PlaybackDefaults.AUTOPLAY, it).apply()
+                            }
+                            HorizontalDivider()
+                            SupjavSettingToggle(
+                                "恢复上次播放进度",
+                                "重新打开视频时从历史进度继续",
+                                resumePlayback
+                            ) {
+                                resumePlayback = it
+                                prefs.edit().putBoolean(PlaybackDefaults.RESUME, it).apply()
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { resetPlayback() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("恢复全部播放默认值") }
+                        Text("仅重置画质、速度、比例、线路、手势与续播设置；不删除收藏和历史。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp))
+                    }
+
+                    SettingsCategory.GESTURES -> {
+                        SettingsCard {
+                            SettingsValueRow(
+                                "双击快进／快退", skipSeconds.toString() + " 秒",
+                                "左右两侧双击跳转时间"
+                            ) { picker = "seek" }
+                            HorizontalDivider()
+                            SettingsValueRow(
+                                "长按两侧播放倍速",
+                                PlaybackDefaults.speedLabel(holdSpeed),
+                                "松手自动恢复原速度"
+                            ) { picker = "hold" }
+                        }
+                    }
+
+                    SettingsCategory.BACKGROUND -> {
+                        SettingsCard {
+                            SupjavSettingToggle(
+                                "网页脚本线路自动兼容",
+                                "原生不能处理时，尝试网站播放与 MP4/HLS 识别",
+                                autoWebFallback
+                            ) {
+                                autoWebFallback = it
+                                prefs.edit().putBoolean("auto_web_fallback", it).apply()
+                            }
+                            HorizontalDivider()
+                            SupjavSettingToggle(
+                                "离开应用自动暂停",
+                                "切换应用、回桌面或锁屏时暂停视频",
+                                pauseOnBackground
+                            ) {
+                                pauseOnBackground = it
+                                val editor = prefs.edit().putBoolean("pause_on_background", it)
+                                if (it) {
+                                    autoPip = false
+                                    editor.putBoolean("auto_pip", false)
+                                }
+                                editor.apply()
+                            }
+                            HorizontalDivider()
+                            SupjavSettingToggle(
+                                "自动画中画",
+                                if (pauseOnBackground) "先关闭离开应用自动暂停"
+                                else "离开应用时尝试进入系统画中画",
+                                autoPip && !pauseOnBackground
+                            ) {
+                                if (!pauseOnBackground) {
+                                    autoPip = it
+                                    prefs.edit().putBoolean("auto_pip", it).apply()
+                                }
+                            }
+                            HorizontalDivider()
+                            SupjavSettingToggle(
+                                "显示手动画中画按钮",
+                                "播放器内保留手动进入系统画中画的入口",
+                                showPip
+                            ) {
+                                showPip = it
+                                prefs.edit().putBoolean("manual_pip", it).apply()
+                            }
+                        }
+                    }
+
+                    SettingsCategory.APPEARANCE -> {
+                        SettingsCard {
+                            SettingsValueRow(
+                                "默认打开页面",
+                                when (startTab) {
+                                    "CATEGORY" -> "分类"
+                                    "RANK" -> "排行"
+                                    "MINE" -> "我的"
+                                    else -> "首页"
+                                },
+                                "下次重新启动 App 生效"
+                            ) { picker = "startup" }
+                            HorizontalDivider()
+                            SupjavSettingToggle(
+                                "深色模式", "全应用统一主题",
+                                dark, onDark
+                            )
+                            HorizontalDivider()
+                            SettingsValueRow(
+                                "视频封面列数",
+                                if (posterColumns == 0) "自动" else posterColumns.toString() + " 列",
+                                "首页、分类和排行的列表密度"
+                            ) { picker = "columns" }
+                        }
+                    }
+
+                    SettingsCategory.DATA -> {
+                        SettingsCard {
+                            ListItem(
+                                headlineContent = { Text("导出诊断 ZIP") },
+                                supportingContent = { Text("播放或网络异常时导出日志供分析") },
+                                leadingContent = { Icon(Icons.Outlined.BugReport, null) },
+                                trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    logError = null
+                                    runCatching { Diagnostics.share(context) }
+                                        .onFailure {
+                                            logError = it.message ?: "导出日志失败"
+                                        }
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                            HorizontalDivider()
+                            ListItem(
+                                headlineContent = { Text("清空播放历史") },
+                                supportingContent = { Text("不会删除收藏记录") },
+                                leadingContent = { Icon(Icons.Outlined.DeleteOutline, null) },
+                                trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    confirmClear = true
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                        }
+                        if (logError != null) {
+                            Text(logError.orEmpty(), color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 6.dp))
+                        }
+                        Text("Supjav Native · Android / Compose / Media3",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("不会绕过网站的验证或访问限制。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+
+    if (picker != null) {
+        SupjavModalSheet(pickerTitle, onDismiss = { picker = null }) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 430.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                pickerOptions.forEach { option ->
+                    val selected = pickerSelected == option.value
+                    ListItem(
+                        headlineContent = { Text(option.label) },
+                        trailingContent = {
+                            if (selected) Icon(Icons.Outlined.Check, "当前选择",
+                                tint = MaterialTheme.colorScheme.primary)
+                        },
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            when (picker) {
+                                "quality" -> app.updateVideoQuality(option.value)
+                                "speed" -> {
+                                    defaultSpeed = PlaybackDefaults.speed(
+                                        option.value.toFloatOrNull() ?: 1f)
+                                    prefs.edit().putFloat(
+                                        PlaybackDefaults.SPEED, defaultSpeed).apply()
+                                }
+                                "fill" -> {
+                                    defaultFill = option.value == "zoom"
+                                    prefs.edit().putBoolean(
+                                        PlaybackDefaults.FIT, defaultFill).apply()
+                                }
+                                "line" -> {
+                                    preferredLine = PlaybackDefaults.line(option.value)
+                                    prefs.edit().putString(
+                                        PlaybackDefaults.LINE, preferredLine).apply()
+                                }
+                                "seek" -> {
+                                    skipSeconds = PlaybackDefaults.skip(
+                                        option.value.toIntOrNull() ?: 10)
+                                    prefs.edit().putInt(
+                                        PlaybackDefaults.SEEK, skipSeconds).apply()
+                                }
+                                "hold" -> {
+                                    holdSpeed = PlaybackDefaults.holdSpeed(
+                                        option.value.toFloatOrNull() ?: 2f)
+                                    prefs.edit().putFloat(
+                                        PlaybackDefaults.HOLD, holdSpeed).apply()
+                                }
+                                "startup" -> {
+                                    startTab = PlaybackDefaults.startup(option.value)
+                                    prefs.edit().putString(
+                                        PlaybackDefaults.START_TAB, startTab).apply()
+                                }
+                                "columns" -> {
+                                    app.updatePosterColumns(
+                                        option.value.toIntOrNull() ?: 0)
+                                }
+                            }
+                            picker = null
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+        }
+    }
+
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
         title = { Text("清空所有播放历史？") },

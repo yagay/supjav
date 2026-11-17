@@ -644,8 +644,7 @@ private fun Root(
                         )
                     )
                 ) {
-                    SupjavHeader("设置", onBack = back)
-                    SettingsScreen(app, dark, onDark)
+                    SettingsScreen(app, dark, onDark, onExit = { showSettings = false })
                 }
             }
         }
