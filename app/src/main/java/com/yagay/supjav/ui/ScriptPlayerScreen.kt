@@ -27,6 +27,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.yagay.supjav.data.MediaSourceDetector
 import com.yagay.supjav.data.SelectedMediaSession
+import com.yagay.supjav.data.SitePlayerWrapper
 import com.yagay.supjav.data.SupjavSource
 import com.yagay.supjav.model.PlaybackSource
 import com.yagay.supjav.model.VideoServer
@@ -112,6 +113,7 @@ fun ScriptPlayerScreen(
             val selected = remember { AtomicBoolean(false) }
             val reportedOrigins = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
             val reportedFrames = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
+            val reportedMedia = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
             fun offer(source: PlaybackSource, method: String) {
                 handler.post {
                     if (!alive.get() || !selected.get()) return@post
@@ -198,9 +200,9 @@ fun ScriptPlayerScreen(
                                     }
                                 }
                                 val media = obj.optJSONArray("media") ?: return@addWebMessageListener
-                                if (media.length() > 0) {
+                                if (media.length() > 0 && reportedMedia.add(documentHost)) {
                                     Diagnostics.log("WEB_MEDIA_DECLARED host=" + documentHost +
-                                        " count=" + media.length())
+                                        " count=" + media.length() + " trusted=" + admitted)
                                 }
                                 for (i in 0 until minOf(media.length(), 12)) {
                                     val source = session.fromPageReport(
@@ -237,7 +239,7 @@ fun ScriptPlayerScreen(
                                             });
                                         });
                                         var f = document.querySelector(
-                                            'iframe#video, #player-wrap iframe[src], iframe#player, ' +
+                                            'iframe#supjav-native-frame, iframe#video, #player-wrap iframe[src], iframe#player, ' +
                                             'iframe[src*="/supjav.php"], iframe[src*="/embed/"], iframe[src*="/e/"]'
                                         );
                                         try {
@@ -268,7 +270,7 @@ fun ScriptPlayerScreen(
                                         (function() {
                                             var frames = document.querySelectorAll('iframe[src]');
                                             var selected = document.querySelector(
-                                                'iframe#video, #player-wrap iframe[src], iframe#player');
+                                                'iframe#supjav-native-frame, iframe#video, #player-wrap iframe[src], iframe#player');
                                             return JSON.stringify({
                                                 count: frames.length,
                                                 frame: selected && selected.src || ''
@@ -298,6 +300,9 @@ fun ScriptPlayerScreen(
                         }
                         postDelayed(rootProbe, 1000)
                         val tokenJson = JSONObject.quote(server.link)
+                        val fallbackJson = JSONObject.quote(
+                            SitePlayerWrapper.fromLegacyToken(server.link).orEmpty()
+                        )
                         val expectedIndex = server.id.toIntOrNull() ?: -1
                         webChromeClient = object : WebChromeClient() {}
                         webViewClient = object : WebViewClient() {
@@ -333,6 +338,9 @@ fun ScriptPlayerScreen(
                             override fun onPageFinished(view: WebView, url: String) {
                                 val host = Uri.parse(url).host.orEmpty()
                                 if (host != "supjav.com" && !host.endsWith(".supjav.com")) return
+                                // Calling the site's original JumpChain is preferred.
+                                // If it does not return a wrapper, use only the documented
+                                // legacy hex-token iframe form; never a top-level GET.
                                 val script = """
                                     (function () {
                                         var controls = Array.from(document.querySelectorAll(
@@ -342,36 +350,107 @@ fun ScriptPlayerScreen(
                                         });
                                         if (!target && $expectedIndex >= 0) {
                                             var fallback = controls[$expectedIndex];
-                                            if (fallback && fallback.getAttribute('data-link') === $tokenJson) {
+                                            if (fallback &&
+                                                fallback.getAttribute('data-link') === $tokenJson) {
                                                 target = fallback;
                                             }
                                         }
-                                        if (!target) return 'NOT_FOUND:' + controls.length;
-                                        try {
-                                            target.scrollIntoView({block:'center'});
-                                            target.click();
-                                            var frame = document.querySelector(
-                                                'iframe#video, #player-wrap iframe[src]');
-                                            if (frame) setTimeout(function () {
-                                                frame.scrollIntoView({block:'start'});
-                                            }, 700);
-                                            return frame ? 'SELECTED_FRAME' : 'SELECTED';
-                                        } catch (err) { return 'SCRIPT_ERROR'; }
+                                        if (!target) return JSON.stringify({
+                                            state:'NOT_FOUND', count:controls.length
+                                        });
+                                        var token = target.getAttribute('data-link');
+                                        var strategy = 'none';
+                                        var wrapper = '';
+                                        var jumpAvailable = typeof window.JumpChain === 'function';
+                                        if (jumpAvailable) {
+                                            try {
+                                                var output = window.JumpChain(token);
+                                                if (typeof output === 'string') {
+                                                    var m = output.match(
+                                                        /https:\/\/[^\s"'<>\x60]+/i);
+                                                    wrapper = m ? m[0].replace(/&amp;/g,'&') : '';
+                                                    strategy = 'site-jump';
+                                                }
+                                            } catch (e) { strategy = 'site-jump-error'; }
+                                        }
+                                        function isWrapper(raw) {
+                                            try {
+                                                var u = new URL(raw, location.href);
+                                                return u.protocol === 'https:' &&
+                                                    (u.hostname === 'supremejav.com' ||
+                                                        u.hostname.endsWith('.supremejav.com')) &&
+                                                    u.pathname === '/supjav.php' &&
+                                                    u.searchParams.has('c');
+                                            } catch (e) { return false; }
+                                        }
+                                        if (!isWrapper(wrapper)) {
+                                            wrapper = $fallbackJson;
+                                            strategy = wrapper ? 'legacy-token' : 'none';
+                                        }
+                                        if (isWrapper(wrapper)) {
+                                            var host = document.getElementById('supjav-native-host');
+                                            if (!host) {
+                                                host = document.createElement('div');
+                                                host.id = 'supjav-native-host';
+                                                host.style.cssText =
+                                                    'position:fixed;inset:0;z-index:2147483000;' +
+                                                    'background:#000;overflow:hidden';
+                                                (document.body || document.documentElement)
+                                                    .appendChild(host);
+                                            }
+                                            var frame = document.getElementById('supjav-native-frame');
+                                            if (!frame) {
+                                                frame = document.createElement('iframe');
+                                                frame.id = 'supjav-native-frame';
+                                                frame.style.cssText =
+                                                    'width:100%;height:100%;border:0;display:block';
+                                                frame.allow = 'autoplay;fullscreen;picture-in-picture';
+                                                frame.allowFullscreen = true;
+                                                host.appendChild(frame);
+                                            }
+                                            frame.src = wrapper;
+                                            return JSON.stringify({
+                                                state:'FRAME_READY',
+                                                strategy:strategy,
+                                                host:new URL(wrapper).hostname,
+                                                jumpAvailable:jumpAvailable
+                                            });
+                                        }
+                                        try { target.click(); } catch (e) {}
+                                        return JSON.stringify({
+                                            state:'CLICK_FALLBACK',
+                                            strategy:strategy,
+                                            jumpAvailable:jumpAvailable,
+                                            count:controls.length
+                                        });
                                     })()
                                 """.trimIndent()
-                                view.evaluateJavascript(script) { result ->
-                                    val resultCode = result.trim('"').take(60)
-                                    Diagnostics.log("WEB_LINE_SELECT line=" + server.name +
-                                        " state=" + resultCode +
-                                        " chars=" + server.link.length)
-                                    selected.set(resultCode.startsWith("SELECTED"))
-                                    Diagnostics.log("WEB_LINE_SCRIPT_RESULT " + resultCode)
-                                    status = when {
-                                        resultCode.startsWith("SELECTED") ->
-                                            "已切换网站线路，正在识别视频源"
-                                        resultCode.startsWith("NOT_FOUND") ->
-                                            "未找到对应线路，请在网页中手动选择"
-                                        else -> "播放器脚本执行失败，请尝试刷新"
+                                view.evaluateJavascript(script) { raw ->
+                                    if (!alive.get()) return@evaluateJavascript
+                                    val result = runCatching {
+                                        JSONObject(org.json.JSONTokener(raw).nextValue() as String)
+                                    }.getOrNull()
+                                    val state = result?.optString("state").orEmpty()
+                                    val strategy = result?.optString("strategy").orEmpty()
+                                    val hostName = result?.optString("host").orEmpty()
+                                    val jumpAvailable = result?.optBoolean("jumpAvailable") ?: false
+                                    Diagnostics.log("WEB_WRAPPER_RESULT line=" + server.name +
+                                        " state=" + state + " strategy=" + strategy +
+                                        " host=" + hostName + " jumpAvailable=" + jumpAvailable +
+                                        " tokens=" + server.link.length)
+                                    selected.set(state == "FRAME_READY" || state == "CLICK_FALLBACK")
+                                    if (state == "FRAME_READY") {
+                                        val wrapper = SitePlayerWrapper.fromLegacyToken(server.link)
+                                        // Site JS may return a different valid wrapper; root
+                                        // probe will register its exact current iframe URL.
+                                        if (strategy == "legacy-token" && wrapper != null) {
+                                            session.trustFrame(server.detailUrl, wrapper)
+                                        }
+                                        status = "已创建专用播放器，正在检测媒体流"
+                                    } else if (state == "CLICK_FALLBACK") {
+                                        status = "网站脚本未提供可用中转地址，正在尝试原页面"
+                                    } else {
+                                        status = "未找到对应线路，请尝试刷新"
                                     }
                                 }
                             }
