@@ -18,7 +18,9 @@ data class VideoServer(
     val link: String,
     val detailUrl: String,
     /** Only set from a successful selected-wrapper HTTP redirect. Never logged. */
-    val verifiedPlayerUrl: String? = null
+    val verifiedPlayerUrl: String? = null,
+    /** CD part on the page. Null when the source has no verifiable part. */
+    val part: String? = null
 )
 
 data class BrowseLink(val kind: FeedKind, val label: String, val path: String)
