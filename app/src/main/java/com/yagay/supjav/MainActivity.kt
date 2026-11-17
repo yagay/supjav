@@ -289,6 +289,14 @@ private fun Root(
                                     app, onOpen,
                                     onSearch = {
                                         clearSearch()
+                                        targetCategoryKind = null
+                                        targetCategoryPath = ""
+                                        tab = SupjavTab.CATEGORY
+                                    },
+                                    onBrowse = { kind, path ->
+                                        clearSearch()
+                                        targetCategoryKind = kind
+                                        targetCategoryPath = path
                                         tab = SupjavTab.CATEGORY
                                     },
                                     refreshKey = refreshKey

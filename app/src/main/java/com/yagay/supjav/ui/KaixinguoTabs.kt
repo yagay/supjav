@@ -46,8 +46,18 @@ import kotlinx.coroutines.withContext
 @Composable
 fun RecommendPage(
     app: SupjavApp, onVideo: (VideoItem) -> Unit,
-    onSearch: () -> Unit, refreshKey: Int
+    onSearch: () -> Unit, refreshKey: Int,
+    onBrowse: (FeedKind, String) -> Unit = { _, _ -> }
 ) {
+    // The shortcuts come from real website navigation discovered previously,
+    // never hardcoded category names or invented home-page recommendations.
+    val known = remember(app, refreshKey) { app.categoryStore.snapshot() }
+    val pins = remember(app, refreshKey) { app.categoryStore.pins().toSet() }
+    val shortcuts = remember(known, pins) {
+        known.filter { it.kind == FeedKind.CATEGORY }
+            .sortedBy { if (it.path in pins) 0 else 1 }
+            .take(8)
+    }
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, top = 4.dp, end = 8.dp, bottom = 6.dp),
@@ -60,6 +70,19 @@ fun RecommendPage(
                 Icon(Icons.Outlined.Tune, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("分类")
+            }
+        }
+        if (shortcuts.isNotEmpty()) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                items(shortcuts, key = { it.path }) { option ->
+                    AssistChip(
+                        onClick = { onBrowse(option.kind, option.path) },
+                        label = { Text(option.label, maxLines = 1) }
+                    )
+                }
             }
         }
         FeedScreen(app, FeedKind.LATEST, "", onVideo, refreshKey)
