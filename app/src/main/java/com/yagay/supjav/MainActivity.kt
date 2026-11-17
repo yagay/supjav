@@ -173,7 +173,11 @@ private fun Root(
     }
     val back: () -> Unit = {
         when {
-            linePickerOpen && switchingLine == null -> linePickerOpen = false
+            linePickerOpen -> {
+                // Never navigate away from the active player while a switch
+                // transaction is still resolving.
+                if (switchingLine == null) linePickerOpen = false
+            }
             showSettings -> showSettings = false
             webServer != null -> {
                 app.webPlayback.close()
@@ -311,8 +315,10 @@ private fun Root(
                         },
                         onWebFallback = webFallback?.let { candidate ->
                             {
+                                val resumeMs = app.playerEngine.player.currentPosition
+                                    .coerceAtLeast(0L)
                                 app.playerEngine.stop()
-                                activeVideo?.let { app.webPlayback.begin(it) }
+                                activeVideo?.let { app.webPlayback.begin(it, resumeMs) }
                                 showPlayer = false
                                 webServer = candidate
                                 Diagnostics.log("NATIVE_FAILED_RETURN_TO_WEB line=" + candidate.name)
