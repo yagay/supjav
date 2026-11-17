@@ -1,5 +1,6 @@
 package com.yagay.supjav.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -64,6 +65,10 @@ fun CategoryPage(
         }
     }
     val current = selectedKind
+    BackHandler(enabled = current != null && selectedPath.isNotEmpty()) {
+        selectedKind = null
+        selectedPath = ""
+    }
     if (current != null && selectedPath.isNotEmpty()) {
         Column(Modifier.fillMaxSize()) {
             Row(

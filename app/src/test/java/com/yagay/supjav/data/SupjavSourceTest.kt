@@ -24,6 +24,36 @@ class SupjavSourceTest {
         assertEquals("https://supjav.com/thumb.png", items[1].coverUrl)
     }
 
+    @Test fun readsSiteTaxonomyAndPreservesExactRoute() {
+        val html = """
+          <nav>
+            <a href="/zh/category/uncensored-jav/">无码</a>
+            <a href="/category/censored-jav/">有码</a>
+            <a href="/cast/fukada-eimi/">演员</a>
+            <a href="/category/cast/legacy/">旧版演员</a>
+            <a href="/maker/1pondo/">制作商</a>
+            <a href="/tag/doll/">标签</a>
+            <a href="https://other.example/category/wrong/">错误</a>
+          </nav>
+        """.trimIndent()
+        val categories = source.parseBrowseOptions(html)
+        assertEquals(6, categories.size)
+        assertEquals("/zh/category/uncensored-jav", categories[0].path)
+        assertEquals("https://supjav.com/zh/category/uncensored-jav/page/2/",
+            source.pageUrl(categories[0].kind, categories[0].path, 2))
+        assertEquals("https://supjav.com/cast/fukada-eimi/",
+            source.pageUrl(categories[2].kind, categories[2].path, 1))
+        assertEquals("https://supjav.com/category/cast/legacy/",
+            source.pageUrl(categories[3].kind, categories[3].path, 1))
+        assertEquals("https://supjav.com/maker/1pondo/",
+            source.pageUrl(categories[4].kind, categories[4].path, 1))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun refusesMalformedExternalCategoryPath() {
+        source.pageUrl(com.yagay.supjav.model.FeedKind.CATEGORY, "//evil.com/", 1)
+    }
+
     @Test fun rejectsLocalOrInsecureMediaTargets() {
         assertFalse(source.isPublicHttps("http://example.com/a.mp4"))
         assertFalse(source.isPublicHttps("https://localhost:1000/"))
