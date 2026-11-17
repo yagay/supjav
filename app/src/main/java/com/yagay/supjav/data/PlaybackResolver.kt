@@ -51,6 +51,13 @@ class PlaybackResolver(private val source: SupjavSource) {
         // Avoid keeping the user stuck on a native spinner when a provider
         // needs its real browser environment.
         val deadlineNs = System.nanoTime() + 30_000_000_000L
+        // The same signed manifest can be found by static extraction and
+        // the browser/player frame. Reuse the exact probe result per route.
+        val probed = HashMap<Triple<String, String, Boolean>, MediaProbe>()
+        fun probeOnce(url: String, referer: String, hls: Boolean): MediaProbe {
+            val key = Triple(url, referer, hls)
+            return probed.getOrPut(key) { gateway.probe(url, referer, hls) }
+        }
         try {
             while (pending.isNotEmpty() && pages < 6 && probes < 12 &&
                 System.nanoTime() < deadlineNs) {
@@ -67,7 +74,7 @@ class PlaybackResolver(private val source: SupjavSource) {
 
                 val direct = SupjavServerAdapters.classify(url, referer)
                 if (direct != null) {
-                    val check = gateway.probe(direct.url, direct.referer,
+                    val check = probeOnce(direct.url, direct.referer,
                         direct.mimeType == "application/x-mpegURL")
                     probes++
                     Diagnostics.log("RESOLVE_PROBE line=" + line.name +
@@ -121,7 +128,7 @@ class PlaybackResolver(private val source: SupjavSource) {
                 // Some HLS endpoints use extensionless paths; the manifest body
                 // (not the URL suffix) determines the media format.
                 if (page.body.trimStart().startsWith("#EXTM3U")) {
-                    val probe = gateway.probe(page.url, referer, true)
+                    val probe = probeOnce(page.url, referer, true)
                     probes++
                     Diagnostics.log("RESOLVE_MANIFEST_PROBE status=" + probe.status +
                         " kind=" + probe.reason)
@@ -181,8 +188,8 @@ class PlaybackResolver(private val source: SupjavSource) {
                     " variants=" + result.candidateTags.values.distinct().joinToString(",") +
                     " hop=" + pages)
                 for (candidate in candidates.distinctBy { it.url }.take(6)) {
-                    if (probes >= 16) break
-                    val check = gateway.probe(candidate.url, candidate.referer,
+                    if (probes >= 12 || System.nanoTime() >= deadlineNs) break
+                    val check = probeOnce(candidate.url, candidate.referer,
                         candidate.mimeType == "application/x-mpegURL")
                     probes++
                     Diagnostics.log("RESOLVE_PROBE line=" + line.name +
