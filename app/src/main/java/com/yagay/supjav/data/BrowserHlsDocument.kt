@@ -106,9 +106,9 @@ internal object BrowserHlsDocument {
                   <button class="top-button" id="rotate" aria-label="横屏或竖屏">⛶</button>
                 </div>
                 <div id="center">
-                  <button class="skip" id="back10" aria-label="快退$playbackSkip秒">↶$playbackSkip</button>
+                  <button class="skip" id="back10" aria-label="快退${playbackSkip}秒">↶$playbackSkip</button>
                   <button id="play" aria-label="播放或暂停">▶</button>
-                  <button class="skip" id="forward10" aria-label="快进$playbackSkip秒">$playbackSkip↷</button>
+                  <button class="skip" id="forward10" aria-label="快进${playbackSkip}秒">$playbackSkip↷</button>
                 </div>
                 <div id="bottom">
                   <div class="time-row">
