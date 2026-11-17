@@ -103,11 +103,62 @@ class SupjavSource {
         uri.scheme == "https" && !privateHost && uri.userInfo == null
     } catch (_: Exception) { false } }
 
+    data class ListingPage(
+        val items: List<VideoItem>,
+        val nextUrl: String?,
+        /** True when the response contains site pagination controls. */
+        val hasPager: Boolean
+    )
+
+    /**
+     * Follow the site's actual next-page anchor instead of assuming every
+     * category/search/list uses the same URL convention. The fallback pageUrl
+     * is used only when the website supplies no usable link.
+     */
+    suspend fun listPage(
+        kind: FeedKind, value: String = "", page: Int = 1,
+        nextUrl: String? = null
+    ): ListingPage = withContext(Dispatchers.IO) {
+        val url = nextUrl?.takeIf { isSiteUrl(it) } ?: pageUrl(kind, value, page)
+        val result = parseListingPage(fetch(url), url, page)
+        Diagnostics.log(
+            "FEED_FETCH kind=${kind.name} page=$page items=${result.items.size}" +
+                " next=${result.nextUrl != null} pager=${result.hasPager}" +
+                " urlPath=${URI(url).path}"
+        )
+        result
+    }
+
     suspend fun list(kind: FeedKind, value: String = "", page: Int = 1): List<VideoItem> =
-        withContext(Dispatchers.IO) {
-            val url = pageUrl(kind, value, page)
-            parseList(fetch(url), url)
+        listPage(kind, value, page).items
+
+    fun parseListingPage(html: String, base: String = BASE, page: Int = 1): ListingPage {
+        val doc = Jsoup.parse(html, base)
+        val pager = doc.select(
+            ".pagination, .wp-pagenavi, .nav-links, nav.navigation.pagination, " +
+                "ul.page-numbers, .paging-navigation, .pager"
+        )
+        val nextCandidates = doc.select(
+            "link[rel=next][href], a[rel=next][href], " +
+                ".pagination a.next[href], .pagination .next a[href], " +
+                "a.nextpostslink[href], a.next.page-numbers[href], " +
+                ".nav-links a.next[href], .pager a.next[href], " +
+                "a[aria-label=Next][href], a[aria-label='Next page'][href]"
+        ).toList() + pager.select("a[href]").filter { el ->
+            val label = el.text().trim()
+            label in setOf((page + 1).toString(), "›", "»", "下一页", "下一頁", "Next", "Next →")
         }
+        val next = nextCandidates.asSequence()
+            .mapNotNull { it.absUrl("href").takeIf { url -> url.isNotBlank() } }
+            .filter { isSiteUrl(it) }
+            .filter { it.substringBefore('#') != base.substringBefore('#') }
+            .firstOrNull()
+        return ListingPage(
+            items = parseList(html, base),
+            nextUrl = next,
+            hasPager = pager.isNotEmpty() || nextCandidates.isNotEmpty()
+        )
+    }
 
     fun parseList(html: String, base: String = BASE): List<VideoItem> {
         val doc = Jsoup.parse(html, base)
