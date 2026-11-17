@@ -64,7 +64,7 @@ fun DetailScreen(
     onFilter: (FeedKind, String) -> Unit,
     onWebPlay: (VideoServer) -> Unit,
     onServersUpdated: (List<VideoServer>) -> Unit = {},
-    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
+    onPlaylistCaptured: (List<VideoItem>, com.yagay.supjav.data.PlaylistPageSource?) -> Unit = { _, _ -> }
 ) {
     var detail by remember(video.id) { mutableStateOf<VideoDetail?>(null) }
     var error by remember(video.id) { mutableStateOf<String?>(null) }
