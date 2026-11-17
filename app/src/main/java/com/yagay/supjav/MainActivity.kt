@@ -127,6 +127,7 @@ private fun Root(
     val activeVideo = routes.lastOrNull()
     var showPlayer by remember { mutableStateOf(false) }
     var webServer by remember { mutableStateOf<VideoServer?>(null) }
+    var embeddedHlsActive by remember { mutableStateOf(false) }
     var webFallback by remember { mutableStateOf<VideoServer?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableIntStateOf(0) }
@@ -139,6 +140,7 @@ private fun Root(
     SideEffect { onPlayerVisibility(showPlayer) }
     val onOpen: (VideoItem) -> Unit = { video ->
         routes.add(video)
+        embeddedHlsActive = false
         webServer = null
         webFallback = null
         showPlayer = false
@@ -147,7 +149,10 @@ private fun Root(
     val back: () -> Unit = {
         when {
             showSettings -> showSettings = false
-            webServer != null -> webServer = null
+            webServer != null -> {
+                embeddedHlsActive = false
+                webServer = null
+            }
             showPlayer -> {
                 app.playerEngine.savePosition()
                 (context as? ComponentActivity)?.requestedOrientation =
@@ -295,20 +300,25 @@ private fun Root(
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column {
-                    SupjavHeader("网页兼容播放器", onBack = back)
+                    if (!embeddedHlsActive) SupjavHeader("网页兼容播放器", onBack = back)
                     webServer?.let { server ->
                         key(server.id, server.link, server.verifiedPlayerUrl) {
-                            ScriptPlayerScreen(server) { source ->
-                                val video = activeVideo
-                                if (video != null) {
-                                    Diagnostics.log("NATIVE_HANDOFF video=" + video.id +
-                                        " line=" + server.name + " type=" + source.mimeType)
-                                    webFallback = server
-                                    webServer = null
-                                    app.playerEngine.play(video, source, resume = false)
-                                    showPlayer = true
-                                }
-                            }
+                            ScriptPlayerScreen(
+                                server = server,
+                                onNativePlay = { source ->
+                                    val video = activeVideo
+                                    if (video != null) {
+                                        Diagnostics.log("NATIVE_HANDOFF video=" + video.id +
+                                            " line=" + server.name + " type=" + source.mimeType)
+                                        webFallback = server
+                                        embeddedHlsActive = false
+                                        webServer = null
+                                        app.playerEngine.play(video, source, resume = false)
+                                        showPlayer = true
+                                    }
+                                },
+                                onEmbeddedHlsChanged = { embeddedHlsActive = it }
+                            )
                         }
                     }
                 }
