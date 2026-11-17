@@ -24,6 +24,43 @@ class SupjavSourceTest {
         assertEquals("https://supjav.com/thumb.png", items[1].coverUrl)
     }
 
+    @Test fun websitePaginationNextLinkBeatsAssumedPageUrl() {
+        val html = """
+          <main class="posts">
+            <div class="post"><a class="img" href="/300001.html" title="First page">
+              <img src="/cover.jpg"/></a></div>
+          </main>
+          <nav class="pagination">
+            <a class="page-numbers current" href="/page/1/">1</a>
+            <a class="page-numbers" href="/page/2/">2</a>
+            <a class="next page-numbers" href="/page/2/">下一页</a>
+          </nav>
+        """.trimIndent()
+        val result = source.parseListingPage(html, "https://supjav.com/", 1)
+        assertEquals(listOf("300001"), result.items.map { it.id })
+        assertEquals("https://supjav.com/page/2/", result.nextUrl)
+        assertTrue(result.hasPager)
+    }
+
+    @Test fun paginationSupportsQueryUrlsAndRejectsUntrustedTargets() {
+        val html = """
+          <div class="post"><a href="/300001.html">A</a></div>
+          <link rel="next" href="https://other.example/page/2"/>
+          <nav class="pagination">
+             <a rel="next" href="/?paged=2">Next</a>
+          </nav>
+        """.trimIndent()
+        val result = source.parseListingPage(html, "https://supjav.com/", 1)
+        assertEquals("https://supjav.com/?paged=2", result.nextUrl)
+    }
+
+    @Test fun noPaginationReturnsNoCursorWithoutInventingOne() {
+        val html = """<article><a href="/300002.html">B</a></article>"""
+        val result = source.parseListingPage(html, "https://supjav.com/", 1)
+        assertEquals(null, result.nextUrl)
+        assertFalse(result.hasPager)
+    }
+
     @Test fun readsSiteTaxonomyAndPreservesExactRoute() {
         val html = """
           <nav>
