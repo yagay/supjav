@@ -65,6 +65,29 @@ class WebPlaybackSession(
         Diagnostics.log("WEB_SESSION_BEGIN video=" + video.id)
     }
 
+
+    /**
+     * Replace the active website line without letting the previous HLS media
+     * session leak progress/state into the new WebView. Only source identity
+     * and a bounded playback position are transferred.
+     */
+    fun switchLine(video: VideoItem, startPositionMs: Long) {
+        pauseWebView()
+        providerView?.get()?.let(::pauseProvider)
+        saveProgress()
+        generation++
+        stopSystemMedia()
+        view = null
+        providerView = null
+        currentVideo = video
+        isPlaying = false
+        positionMs = startPositionMs.coerceIn(0L, 86_400_000L)
+        durationMs = 0
+        hasProgress = positionMs > 0L
+        lastSaveTime = 0
+        Diagnostics.log("WEB_SESSION_LINE_CHANGE video=" + video.id)
+    }
+
     suspend fun restorePosition(): Long {
         val video = currentVideo ?: return 0
         val currentGeneration = generation

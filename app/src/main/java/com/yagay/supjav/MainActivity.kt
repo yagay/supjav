@@ -559,8 +559,12 @@ private fun Root(
                                                     app.webPlayback.positionMs
                                                 else app.playerEngine.player.currentPosition
                                                     .coerceAtLeast(0L)
-                                                app.playerEngine.stop()
-                                                app.webPlayback.begin(video, resumeMs)
+                                                // Do not destroy the original playable
+                                                // native media before the replacement is ready.
+                                                // Keep it paused for a quick return.
+                                                app.playerEngine.player.pause()
+                                                app.playerEngine.savePosition()
+                                                app.webPlayback.switchLine(video, resumeMs)
                                                 selectedServer = candidate
                                                 webFallback = candidate
                                                 autoOpenWebHls = SupjavLine.of(candidate.name) in

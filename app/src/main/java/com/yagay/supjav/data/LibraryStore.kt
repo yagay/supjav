@@ -6,16 +6,27 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.yagay.supjav.model.VideoItem
 
-class LibraryStore(context: Context) : SQLiteOpenHelper(context, "supjav_library.db", null, 1) {
+class LibraryStore(context: Context) : SQLiteOpenHelper(context, "supjav_library.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE favorites(id TEXT PRIMARY KEY,title TEXT NOT NULL,cover TEXT NOT NULL,url TEXT NOT NULL,updated INTEGER NOT NULL)")
-        db.execSQL("CREATE TABLE history(id TEXT PRIMARY KEY,title TEXT NOT NULL,cover TEXT NOT NULL,url TEXT NOT NULL,position_ms INTEGER NOT NULL,updated INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE favorites(id TEXT PRIMARY KEY,title TEXT NOT NULL,cover TEXT NOT NULL,url TEXT NOT NULL,published TEXT NOT NULL DEFAULT '',duration TEXT NOT NULL DEFAULT '',updated INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE history(id TEXT PRIMARY KEY,title TEXT NOT NULL,cover TEXT NOT NULL,url TEXT NOT NULL,published TEXT NOT NULL DEFAULT '',duration TEXT NOT NULL DEFAULT '',position_ms INTEGER NOT NULL,updated INTEGER NOT NULL)")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            for (table in listOf("favorites", "history")) {
+                db.execSQL("ALTER TABLE $table ADD COLUMN published TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE $table ADD COLUMN duration TEXT NOT NULL DEFAULT ''")
+            }
+        }
+    }
 
     private fun values(v: VideoItem) = ContentValues().apply {
         put("id", v.id); put("title", v.title); put("cover", v.coverUrl)
-        put("url", v.detailUrl); put("updated", System.currentTimeMillis())
+        put("url", v.detailUrl)
+        put("published", v.publishedAt)
+        put("duration", v.durationLabel)
+        put("updated", System.currentTimeMillis())
     }
 
     @Synchronized fun isFavorite(id: String): Boolean =
@@ -42,11 +53,15 @@ class LibraryStore(context: Context) : SQLiteOpenHelper(context, "supjav_library
     @Synchronized fun list(favorites: Boolean): List<VideoItem> {
         val table = if (favorites) "favorites" else "history"
         return readableDatabase.rawQuery(
-            "SELECT id,title,cover,url FROM " + table + " ORDER BY updated DESC LIMIT 500", null
+            "SELECT id,title,cover,url,published,duration FROM " + table + " ORDER BY updated DESC LIMIT 500", null
         ).use { c ->
             val items = mutableListOf<VideoItem>()
-            while (c.moveToNext()) items.add(VideoItem(c.getString(0), c.getString(1),
-                c.getString(2), c.getString(3)))
+            while (c.moveToNext()) items.add(VideoItem(
+                id = c.getString(0), title = c.getString(1),
+                coverUrl = c.getString(2), detailUrl = c.getString(3),
+                publishedAt = c.getString(4).orEmpty(),
+                durationLabel = c.getString(5).orEmpty()
+            ))
             items
         }
     }
