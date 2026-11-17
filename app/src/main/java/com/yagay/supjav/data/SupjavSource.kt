@@ -140,8 +140,10 @@ class SupjavSource {
         val description = doc.selectFirst(".post-content, .entry-content, .post-meta")?.text()
             .orEmpty().take(1200)
         Diagnostics.log("DETAIL id=" + video.id + " servers=" + servers.size)
+        val taxonomy = parseBrowseOptions(html, video.detailUrl)
+            .map { BrowseLink(it.kind, it.label, it.path) }
         VideoDetail(video.copy(title = title, coverUrl = cover, tags = tags, actors = actors),
-            description, tags, actors, servers, related, categories, makers)
+            description, tags, actors, servers, related, categories, makers, taxonomy)
     }
 
 

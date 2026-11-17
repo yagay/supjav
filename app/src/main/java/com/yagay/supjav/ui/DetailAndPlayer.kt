@@ -216,7 +216,7 @@ fun DetailScreen(
                 SupjavSectionTitle("演员")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(d.actors) { actor ->
-                        AssistChip(onClick = { onFilter(FeedKind.ACTOR, actor) },
+                        AssistChip(onClick = { onFilter(FeedKind.ACTOR, d.taxonomy.firstOrNull { it.kind == FeedKind.ACTOR && it.label == actor }?.path ?: actor) },
                             label = { Text(actor) })
                     }
                 }
@@ -225,8 +225,20 @@ fun DetailScreen(
                 SupjavSectionTitle("标签")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(d.tags) { tag ->
-                        AssistChip(onClick = { onFilter(FeedKind.TAG, tag) },
+                        AssistChip(onClick = { onFilter(FeedKind.TAG, d.taxonomy.firstOrNull { it.kind == FeedKind.TAG && it.label == tag }?.path ?: tag) },
                             label = { Text(tag) })
+                    }
+                }
+            }
+            val groupLinks = d.taxonomy.filter {
+                it.kind == FeedKind.CATEGORY || it.kind == FeedKind.MAKER
+            }.distinctBy { it.path }
+            if (groupLinks.isNotEmpty()) {
+                SupjavSectionTitle("分类与制作商")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    items(groupLinks, key = { it.path }) { link ->
+                        AssistChip(onClick = { onFilter(link.kind, link.path) },
+                            label = { Text(link.label) })
                     }
                 }
             }

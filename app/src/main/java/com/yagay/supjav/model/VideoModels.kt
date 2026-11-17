@@ -12,6 +12,8 @@ data class VideoItem(
 
 data class VideoServer(val id: String, val name: String, val link: String, val detailUrl: String)
 
+data class BrowseLink(val kind: FeedKind, val label: String, val path: String)
+
 data class VideoDetail(
     val video: VideoItem,
     val description: String,
@@ -20,7 +22,8 @@ data class VideoDetail(
     val servers: List<VideoServer>,
     val related: List<VideoItem>,
     val categories: List<String> = emptyList(),
-    val makers: List<String> = emptyList()
+    val makers: List<String> = emptyList(),
+    val taxonomy: List<BrowseLink> = emptyList()
 )
 
 enum class FeedKind(val title: String) {
