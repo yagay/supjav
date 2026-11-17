@@ -44,6 +44,17 @@ class PlaybackQueuePolicyTest {
         assertEquals(listOf("c1-luc", "c1-evs"), candidates.map { it.id })
     }
 
+
+    @Test fun previousAndNextFollowVisiblePageOrder() {
+        val items = listOf(video("first"), video("middle"), video("last"))
+        assertEquals("first", PlaybackQueuePolicy.adjacent(items, "middle", -1)?.id)
+        assertEquals("last", PlaybackQueuePolicy.adjacent(items, "middle", 1)?.id)
+        assertNull(PlaybackQueuePolicy.adjacent(items, "first", -1))
+        assertNull(PlaybackQueuePolicy.adjacent(items, "last", 1))
+        assertNull(PlaybackQueuePolicy.adjacent(items, "missing", 1))
+        assertNull(PlaybackQueuePolicy.adjacent(items, "first", 0))
+    }
+
     @Test fun withoutCdAllMirrorsAreAvailable() {
         val servers = listOf(
             line("evs", "EVS", null), line("luc", "LUC", null)
