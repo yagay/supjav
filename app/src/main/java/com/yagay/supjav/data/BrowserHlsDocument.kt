@@ -26,7 +26,7 @@ internal object BrowserHlsDocument {
             html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Roboto,"Noto Sans",sans-serif}
             #player{position:relative;width:100%;height:100%;height:100dvh;overflow:hidden;background:#000}
             video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
-            #gestures{position:absolute;inset:0;z-index:2;touch-action:manipulation}
+            #gestures{position:absolute;inset:0;z-index:2;touch-action:none;user-select:none}
             #chrome{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:1;transition:opacity .22s ease}
             #chrome.hidden{opacity:0}
             #chrome.hidden button,#chrome.hidden input{pointer-events:none}
@@ -43,8 +43,12 @@ internal object BrowserHlsDocument {
             #center .skip{width:54px;height:54px;font-size:15px;font-weight:600}
             #play{width:68px;height:68px;font-size:30px}
             .time-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
-            #progress{display:block;width:100%;height:26px;margin:0;accent-color:#fff;background:transparent;touch-action:none;cursor:pointer}
-            #progress:disabled{opacity:.5}
+            #progress{display:block;width:100%;height:22px;margin:0;appearance:none;-webkit-appearance:none;background:transparent;touch-action:none;cursor:pointer}
+            #progress:disabled{opacity:.45}
+            #progress::-webkit-slider-runnable-track{height:3px;background:rgba(255,255,255,.40);border-radius:3px}
+            #progress::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:11px;height:11px;margin-top:-4px;background:#fff;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.35)}
+            #progress::-moz-range-track{height:3px;background:rgba(255,255,255,.40);border-radius:3px}
+            #progress::-moz-range-thumb{width:11px;height:11px;border:0;background:#fff;border-radius:50%}
             .actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:4px}
             .pill{height:37px;padding:0 12px;border-radius:19px;background:rgba(255,255,255,.14);font-size:13px;font-weight:550}
             #speed{font-variant-numeric:tabular-nums;min-width:58px}
@@ -68,7 +72,7 @@ internal object BrowserHlsDocument {
             <main id="player">
               <video id="video" playsinline webkit-playsinline preload="metadata"></video>
               <div id="spinner" aria-hidden="true"></div>
-              <div id="gestures" aria-label="双击左侧快退十秒，双击右侧快进十秒"></div>
+              <div id="gestures" aria-label="单击播放暂停，双击两侧快退快进十秒，长按两侧两倍速，上下区域左右滑动调整进度"></div>
               <div id="chrome">
                 <div id="top">
                   <button class="top-button" id="back" aria-label="返回网站播放器">‹</button>
@@ -207,16 +211,117 @@ internal object BrowserHlsDocument {
                 if(!progress.disabled)video.currentTime=video.duration*Number(progress.value)/1000;
                 scrubbing=false;tick();chromeVisible(true);
               });
-              var lastTapTime=0,lastTapSide='';
-              document.getElementById('gestures').addEventListener('pointerup',function(event){
-                var x=event.clientX/window.innerWidth;
-                var side=x<.38?'left':x>.62?'right':'center';
-                var now=Date.now();
-                if(side!=='center' && lastTapSide===side && now-lastTapTime<330){
-                  lastTapTime=0;skip(side==='left'?-10:10);return;
+              // A single pointer state machine avoids fighting with the seek
+              // bar/buttons and defers single taps until the double-tap window
+              // ends. Scrubbing only begins in the unused upper/lower video
+              // regions, so the middle controls remain easy to operate.
+              var gestureLayer = document.getElementById('gestures');
+              var activeGesture = null, holdTimer = null, singleTapTimer = null;
+              var lastTap = null, previousHoldRate = null;
+              function gestureSide(x,width) {
+                return x < width*.38 ? 'left' : x > width*.62 ? 'right' : 'center';
+              }
+              function restoreHold() {
+                clearTimeout(holdTimer);
+                holdTimer=null;
+                if(previousHoldRate!==null) {
+                  video.playbackRate=previousHoldRate;
+                  previousHoldRate=null;
+                  message('已恢复 '+video.playbackRate+'×');
                 }
-                lastTapTime=now;lastTapSide=side;
-                chromeVisible(chrome.classList.contains('hidden'));
+              }
+              function clearGesture(){
+                activeGesture=null;
+                restoreHold();
+              }
+              gestureLayer.addEventListener('pointerdown',function(e){
+                if(activeGesture || (e.pointerType==='mouse' && e.button!==0))return;
+                var box=gestureLayer.getBoundingClientRect();
+                var x=e.clientX-box.left,y=e.clientY-box.top;
+                var side=gestureSide(x,box.width);
+                activeGesture={id:e.pointerId,x:x,y:y,dx:0,dy:0,
+                  width:box.width,height:box.height,side:side,
+                  seeking:false,moved:false,holding:false,
+                  startPosition:video.currentTime||0,preview:video.currentTime||0};
+                try{gestureLayer.setPointerCapture(e.pointerId);}catch(err){}
+                if(side!=='center'){
+                  holdTimer=setTimeout(function(){
+                    var g=activeGesture;
+                    if(!g || g.moved || g.seeking || g.holding)return;
+                    g.holding=true;
+                    clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
+                    previousHoldRate=video.playbackRate;
+                    video.playbackRate=2;
+                    if(video.paused)video.play().catch(function(){});
+                    message('2× 倍速播放 · 松手恢复');
+                    chromeVisible(true);
+                  },420);
+                }
+              });
+              gestureLayer.addEventListener('pointermove',function(e){
+                var g=activeGesture;
+                if(!g || e.pointerId!==g.id || g.holding)return;
+                var box=gestureLayer.getBoundingClientRect();
+                g.dx=(e.clientX-box.left)-g.x;
+                g.dy=(e.clientY-box.top)-g.y;
+                if(Math.abs(g.dx)>10 || Math.abs(g.dy)>10){
+                  g.moved=true;
+                  clearTimeout(holdTimer);holdTimer=null;
+                }
+                var emptyArea=g.y<g.height*.30 || g.y>g.height*.70;
+                if(!g.seeking && emptyArea && Number.isFinite(video.duration) &&
+                   video.duration>0 && Math.abs(g.dx)>12 &&
+                   Math.abs(g.dx)>Math.abs(g.dy)*1.25){
+                  g.seeking=true;
+                  scrubbing=true;
+                  clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
+                }
+                if(g.seeking){
+                  e.preventDefault();
+                  g.preview=Math.max(0,Math.min(video.duration,
+                      g.startPosition+(g.dx/Math.max(g.width,1))*video.duration));
+                  current.textContent=clock(g.preview);
+                  progress.value=Math.round(g.preview/video.duration*1000);
+                  message((g.dx>=0?'快进至 ':'快退至 ')+clock(g.preview));
+                  chromeVisible(true);
+                }
+              });
+              gestureLayer.addEventListener('pointerup',function(e){
+                var g=activeGesture;
+                if(!g || e.pointerId!==g.id)return;
+                var wasHolding=g.holding,wasSeeking=g.seeking,wasMoved=g.moved;
+                var target=g.preview,side=g.side;
+                clearGesture();
+                if(wasSeeking){
+                  scrubbing=false;
+                  if(Number.isFinite(video.duration)&&video.duration>0) {
+                    video.currentTime=target;
+                    reportProgress(true);
+                  }
+                  tick();chromeVisible(true);return;
+                }
+                if(wasHolding || wasMoved)return;
+                var now=Date.now();
+                if(lastTap && now-lastTap.time<=330 &&
+                  lastTap.side===side && side!=='center' &&
+                  Math.hypot(lastTap.x-g.x,lastTap.y-g.y)<42){
+                  clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
+                  skip(side==='left'?-10:10);
+                  return;
+                }
+                clearTimeout(singleTapTimer);
+                lastTap={time:now,side:side,x:g.x,y:g.y};
+                singleTapTimer=setTimeout(function(){
+                  lastTap=null;singleTapTimer=null;toggle();
+                },330);
+              });
+              gestureLayer.addEventListener('pointercancel',function(){
+                if(activeGesture && activeGesture.seeking){scrubbing=false;tick();}
+                clearGesture();
+              });
+              window.addEventListener('blur',clearGesture);
+              document.addEventListener('visibilitychange',function(){
+                if(document.hidden)clearGesture();
               });
               video.addEventListener('play',function(){playbackIcon();chromeVisible(true);});
               video.addEventListener('pause',function(){playbackIcon();chromeVisible(true);reportProgress(true);});
