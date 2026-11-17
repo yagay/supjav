@@ -502,7 +502,7 @@ fun PlayerScreen(
                             detectTapGestures(
                                 onTap = {
                                     // Single tap controls playback, not UI opacity.
-                                    if (player.isPlaying) {
+                                    if (player.playWhenReady) {
                                         player.pause()
                                         flash("pause")
                                     } else {
@@ -530,10 +530,10 @@ fun PlayerScreen(
                                         offset.x > size.width * .62f
                                     if (onSide && pressBoostOriginal == null) {
                                         pressBoostOriginal = player.playbackParameters.speed
-                                        pressBoostWasPaused = !player.isPlaying
+                                        pressBoostWasPaused = !player.playWhenReady
                                         pressBoostSide = if (offset.x < size.width / 2f) -1 else 1
                                         player.setPlaybackSpeed(2f)
-                                        if (!player.isPlaying) player.play()
+                                        if (!player.playWhenReady) player.play()
                                     }
                                 },
                                 onPress = {
