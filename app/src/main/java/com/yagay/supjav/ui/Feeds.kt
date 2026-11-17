@@ -1,21 +1,21 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.yagay.supjav.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,71 +23,128 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.yagay.supjav.SupjavApp
 import com.yagay.supjav.model.FeedKind
 import com.yagay.supjav.model.VideoItem
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+/** Kaixinguo-like compact cards. Long press opens real local actions. */
 @Composable
-fun VideoTile(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.clip(RoundedCornerShape(SupjavMetrics.cardRadius))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
-    ) {
-        Box {
-            AsyncImage(
-                model = video.coverUrl.ifBlank { null },
-                contentDescription = video.title,
-                modifier = Modifier.fillMaxWidth().aspectRatio(0.74f)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentScale = ContentScale.Crop
-            )
-            if (video.code.isNotBlank()) {
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomStart).padding(7.dp),
-                    color = Color.Black.copy(alpha = 0.69f),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(video.code, Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall, color = Color.White,
-                        maxLines = 1)
+fun VideoTile(
+    video: VideoItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    app: SupjavApp? = null,
+    rank: Int? = null
+) {
+    var menuOpen by remember(video.id) { mutableStateOf(false) }
+    var saved by remember(video.id) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(menuOpen, video.id) {
+        if (menuOpen && app != null) saved = withContext(Dispatchers.IO) {
+            app.library.isFavorite(video.id)
+        }
+    }
+    Box(modifier) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(SupjavMetrics.cardRadius))
+                .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
+        ) {
+            Box {
+                AsyncImage(
+                    model = video.coverUrl.ifBlank { null },
+                    contentDescription = video.title,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f)
+                        .clip(RoundedCornerShape(SupjavMetrics.cardRadius))
+                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                    contentScale = ContentScale.Crop
+                )
+                if (rank != null) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color.Black.copy(alpha = .65f)
+                    ) {
+                        Text(rank.toString(),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                if (video.code.isNotBlank()) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color.Black.copy(alpha = .7f)
+                    ) {
+                        Text(video.code,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            color = Color.White, style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
+            Text(
+                video.title,
+                modifier = Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis
+            )
         }
-        Text(
-            video.title,
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 9.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 2,
-            minLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("查看详情") },
+                leadingIcon = { Icon(Icons.Outlined.PlayArrow, null) },
+                onClick = { menuOpen = false; onClick() }
+            )
+            if (app != null) {
+                DropdownMenuItem(
+                    text = { Text(if (saved) "取消收藏" else "收藏") },
+                    leadingIcon = { Icon(Icons.Outlined.BookmarkBorder, null) },
+                    onClick = {
+                        menuOpen = false
+                        scope.launch {
+                            saved = withContext(Dispatchers.IO) {
+                                app.library.toggleFavorite(video)
+                            }
+                        }
+                    }
+                )
+            }
+        }
     }
 }
 
+/** Cached pages with pull-to-refresh, retry and retained scroll offset. */
 @Composable
 fun FeedScreen(
     app: SupjavApp, kind: FeedKind, value: String,
     onVideo: (VideoItem) -> Unit, refreshKey: Int = 0
 ) {
-    // Shared page state keeps list data and scroll position when switching tabs.
-    val pageState = remember(app, kind, value, refreshKey) {
-        app.feedCache.getOrCreate(kind, value, refreshKey)
+    var localRefresh by remember(kind, value, refreshKey) { mutableIntStateOf(0) }
+    val pageState = remember(app, kind, value, refreshKey, localRefresh) {
+        app.feedCache.getOrCreate(kind, value, refreshKey * 10000 + localRefresh)
     }
     val data = pageState.items
+    val grid = key(pageState) {
+        rememberLazyGridState(
+            initialFirstVisibleItemIndex = pageState.firstVisibleIndex,
+            initialFirstVisibleItemScrollOffset = pageState.firstVisibleOffset
+        )
+    }
     val scope = rememberCoroutineScope()
-    val grid = rememberLazyGridState(
-        initialFirstVisibleItemIndex = pageState.firstVisibleIndex,
-        initialFirstVisibleItemScrollOffset = pageState.firstVisibleOffset
-    )
-    val loading = pageState.loading
-    val endReached = pageState.endReached
-    val error = pageState.error
+    val layoutSetting = app.preferences.getInt("poster_columns", 0)
+    val columns = when (layoutSetting) {
+        2 -> GridCells.Fixed(2)
+        3 -> GridCells.Fixed(3)
+        else -> GridCells.Adaptive(SupjavMetrics.posterMinWidth)
+    }
 
     suspend fun loadMore() {
         if (pageState.loading || pageState.endReached) return
@@ -95,15 +152,15 @@ fun FeedScreen(
         pageState.error = null
         try {
             val next = app.source.list(kind, value, pageState.page + 1)
-            val unique = next.filterNot { candidate -> data.any { it.id == candidate.id } }
-            data.addAll(unique)
+            val unseen = next.filterNot { item -> data.any { it.id == item.id } }
+            data.addAll(unseen)
             pageState.page++
             pageState.loaded = true
-            if (next.isEmpty() || unique.isEmpty()) pageState.endReached = true
-        } catch (e: kotlinx.coroutines.CancellationException) {
+            if (next.isEmpty() || unseen.isEmpty()) pageState.endReached = true
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            pageState.error = e.message?.take(160) ?: "网络或解析失败"
+            pageState.error = e.message?.take(160) ?: "请求失败"
         } finally {
             pageState.loading = false
         }
@@ -112,7 +169,6 @@ fun FeedScreen(
     LaunchedEffect(pageState) {
         if (!pageState.loaded && pageState.error == null) loadMore()
     }
-
     DisposableEffect(grid, pageState) {
         onDispose {
             pageState.firstVisibleIndex = grid.firstVisibleItemIndex
@@ -122,115 +178,61 @@ fun FeedScreen(
     val lastVisible by remember(grid) {
         derivedStateOf { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
     }
-    LaunchedEffect(lastVisible, pageState.loading, pageState.endReached, pageState.error) {
-        if (data.isNotEmpty() && lastVisible >= data.size - 5 &&
-            !pageState.loading && !pageState.endReached && pageState.error == null) loadMore()
+    LaunchedEffect(pageState, lastVisible, pageState.loading, pageState.endReached, pageState.error) {
+        if (data.isNotEmpty() && lastVisible >= data.size - 9 &&
+            !pageState.loading && !pageState.endReached && pageState.error == null) {
+            loadMore()
+        }
     }
-    Column(Modifier.fillMaxSize()) {
-        if (pageState.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (data.isEmpty() && !pageState.loading) {
-            SupjavEmptyState(
-                pageState.error ?: "当前列表暂无内容",
-                onRetry = if (pageState.error != null) ({ scope.launch { loadMore() } }) else null,
-                modifier = Modifier.fillMaxSize()
-            )
+
+    PullToRefreshBox(
+        isRefreshing = pageState.loading && data.isNotEmpty() && pageState.page == 0,
+        onRefresh = { localRefresh++ },
+        modifier = Modifier.fillMaxSize()
+    ) {
+        if (data.isEmpty() && pageState.loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (data.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                SupjavEmptyState(pageState.error ?: "暂时没有作品",
+                    onRetry = if (pageState.error != null) ({
+                        scope.launch { loadMore() }
+                    }) else null)
+            }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxSize(),
+                columns = columns,
                 state = grid,
-                contentPadding = PaddingValues(start = 12.dp, top = 6.dp, end = 12.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 26.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                items(data, key = { it.id }) { video ->
-                    VideoTile(video, { onVideo(video) })
+                itemsIndexed(data, key = { _, video -> video.id }) { index, video ->
+                    VideoTile(
+                        video, onClick = { onVideo(video) }, app = app,
+                        rank = if (kind in setOf(FeedKind.DAY, FeedKind.WEEK, FeedKind.MONTH))
+                            index + 1 else null
+                    )
                 }
                 if (pageState.loading || pageState.error != null || !pageState.endReached) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(6.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Box(Modifier.fillMaxWidth().padding(10.dp), contentAlignment = Alignment.Center) {
                             when {
-                                pageState.loading -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                                pageState.error != null -> TextButton(onClick = { scope.launch { loadMore() } }) {
-                                    Text("加载失败，点击重试")
-                                }
-                                else -> TextButton(onClick = { scope.launch { loadMore() } }) {
-                                    Text("加载更多")
-                                }
+                                pageState.loading -> CircularProgressIndicator(Modifier.size(24.dp))
+                                pageState.error != null -> TextButton(
+                                    onClick = { scope.launch { loadMore() } }
+                                ) { Text("加载失败，点击重试") }
+                                else -> TextButton(
+                                    onClick = { scope.launch { loadMore() } }
+                                ) { Text("加载更多") }
                             }
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun DiscoverScreen(
-    app: SupjavApp,
-    onVideo: (VideoItem) -> Unit,
-    initialKind: FeedKind = FeedKind.SEARCH,
-    initialValue: String = ""
-) {
-    var text by remember { mutableStateOf(initialValue) }
-    var selectedKind by remember { mutableStateOf(initialKind) }
-    var activeKind by remember { mutableStateOf(initialKind) }
-    var activeValue by remember { mutableStateOf(initialValue) }
-    LaunchedEffect(initialKind, initialValue) {
-        selectedKind = initialKind
-        text = initialValue
-        activeKind = initialKind
-        activeValue = initialValue
-    }
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        OutlinedTextField(
-            value = text, onValueChange = { text = it },
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
-            shape = RoundedCornerShape(SupjavMetrics.controlRadius),
-            singleLine = true,
-            leadingIcon = { Icon(Icons.Outlined.Search, null) },
-            placeholder = { Text("搜索标题、番号、分类、演员或标签") },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = {
-                activeKind = selectedKind
-                activeValue = text.trim()
-            }),
-            trailingIcon = {
-                TextButton(onClick = {
-                    activeKind = selectedKind
-                    activeValue = text.trim()
-                }) { Text("搜索") }
-            }
-        )
-        Row(
-            Modifier.horizontalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf(FeedKind.SEARCH, FeedKind.CATEGORY, FeedKind.TAG, FeedKind.ACTOR, FeedKind.MAKER)
-                .forEach { option ->
-                    FilterChip(
-                        selected = selectedKind == option,
-                        onClick = { selectedKind = option },
-                        label = { Text(option.title) }
-                    )
-                }
-        }
-        if (activeValue.isBlank()) {
-            SupjavEmptyState("输入关键词后搜索；或者从作品详情点击标签/演员", modifier = Modifier.fillMaxSize())
-        } else {
-            Text(
-                activeKind.title + " · " + activeValue,
-                modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelMedium
-            )
-            FeedScreen(app, activeKind, activeValue, onVideo)
         }
     }
 }
