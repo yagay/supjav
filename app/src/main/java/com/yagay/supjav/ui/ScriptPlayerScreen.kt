@@ -33,6 +33,7 @@ import com.yagay.supjav.data.SitePlayerWrapper
 import com.yagay.supjav.data.SupjavSource
 import com.yagay.supjav.model.PlaybackSource
 import com.yagay.supjav.model.VideoServer
+import com.yagay.supjav.player.WebPlaybackSession
 import com.yagay.supjav.util.Diagnostics
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
@@ -48,7 +49,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 fun ScriptPlayerScreen(
     server: VideoServer,
     onNativePlay: (PlaybackSource) -> Unit,
-    onEmbeddedHlsChanged: (Boolean) -> Unit = {}
+    onEmbeddedHlsChanged: (Boolean) -> Unit = {},
+    webPlayback: WebPlaybackSession
 ) {
     val context = LocalContext.current
     var status by remember(server.id, server.link) { mutableStateOf("正在载入网站播放器") }
@@ -78,6 +80,7 @@ fun ScriptPlayerScreen(
         // No extra Compose status/refresh toolbar above the video.
         EmbeddedHlsPlayer(
             source = requireNotNull(browserHlsSource),
+            session = webPlayback,
             onWebsitePlayer = {
                 useEmbeddedHls = false
                 reload++
