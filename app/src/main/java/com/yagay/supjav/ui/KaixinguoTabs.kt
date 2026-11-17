@@ -87,12 +87,12 @@ private fun rememberSaveableRank(): MutableIntState =
     androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
 
 @Composable
-fun NewReleasesPage(app: SupjavApp, onVideo: (VideoItem) -> Unit) {
+fun NewReleasesPage(app: SupjavApp, onVideo: (VideoItem) -> Unit, refreshKey: Int = 0) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             SupjavSectionTitle("最新更新", "Supjav 网站最新发布的作品")
         }
-        FeedScreen(app, FeedKind.LATEST, "", onVideo)
+        FeedScreen(app, FeedKind.LATEST, "", onVideo, refreshKey)
     }
 }
 
