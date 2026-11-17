@@ -22,6 +22,8 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.PlaylistPlay
+import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
@@ -453,6 +455,47 @@ private fun Root(
         }
     }
 
+    // Previous/next always follow the same order as the expandable queue,
+    // including pages loaded later from the source category/search/ranking.
+    val livePlaylist = PlaybackQueuePolicy.snapshot(
+        playlistSource?.pageState?.items?.toList() ?: playlistItems, activeVideo
+    )
+    val previousVideo = PlaybackQueuePolicy.adjacent(livePlaylist, activeVideo?.id, -1)
+    val nextVideo = PlaybackQueuePolicy.adjacent(livePlaylist, activeVideo?.id, 1)
+    val moreOnSourcePage = playlistSource?.pageState?.endReached == false
+    val playlistBusy = playlistSwitching != null || switchingLine != null
+
+    fun navigatePlaylist(direction: Int) {
+        val currentId = routes.lastOrNull()?.id ?: return
+        if (playlistBusy) return
+        val next = PlaybackQueuePolicy.adjacent(livePlaylist, currentId, direction)
+        if (next != null) {
+            Diagnostics.log("PLAYLIST_NAV_DIRECTION dir=" + direction +
+                " current=" + currentId + " next=" + next.id)
+            playFromPlaylist(next)
+            return
+        }
+        val source = playlistSource
+        if (direction != 1 || source == null || source.pageState.endReached ||
+            source.pageState.loading) {
+            Diagnostics.log("PLAYLIST_NAV_BOUNDARY dir=" + direction +
+                " current=" + currentId)
+            return
+        }
+        // The last loaded work can move directly into the first item of the
+        // following site page, without first opening the queue.
+        scope.launch {
+            PlaylistPageLoader.loadMore(app, source)
+            if (routes.lastOrNull()?.id != currentId || playlistSwitching != null) return@launch
+            val refreshed = PlaybackQueuePolicy.snapshot(source.pageState.items.toList(),
+                routes.lastOrNull())
+            val following = PlaybackQueuePolicy.adjacent(refreshed, currentId, 1)
+            if (following != null) playFromPlaylist(following)
+            else Diagnostics.log("PLAYLIST_NAV_NEXT_UNAVAILABLE current=" + currentId +
+                " pagingError=" + (source.pageState.error != null))
+        }
+    }
+
     // The same switch transaction is used by playback-line and CD selectors.
     // CD changes restart at 0; switching mirrors of the same CD keeps progress.
     fun switchServer(candidate: VideoServer) {
@@ -737,6 +780,11 @@ private fun Root(
                             playlistError = null
                             playlistOpen = true
                         },
+                        onPreviousVideo = { navigatePlaylist(-1) },
+                        onNextVideo = { navigatePlaylist(1) },
+                        hasPreviousVideo = previousVideo != null,
+                        hasNextVideo = nextVideo != null || moreOnSourcePage,
+                        playlistSwitching = playlistBusy,
                         onSelectPart = { part ->
                             VideoParts.forPart(availableServers, part, selectedServer)
                                 ?.let(::switchServer)
@@ -788,6 +836,18 @@ private fun Root(
                                     Text(selectedServer?.let(VideoParts::partOf) ?: "CD")
                                 }
                             }
+                            IconButton(
+                                enabled = previousVideo != null && !playlistBusy,
+                                onClick = { navigatePlaylist(-1) }
+                            ) {
+                                Icon(Icons.Outlined.SkipPrevious, "上一部")
+                            }
+                            IconButton(
+                                enabled = (nextVideo != null || moreOnSourcePage) && !playlistBusy,
+                                onClick = { navigatePlaylist(1) }
+                            ) {
+                                Icon(Icons.Outlined.SkipNext, "下一部")
+                            }
                             IconButton(onClick = {
                                 playlistError = null
                                 playlistOpen = true
@@ -828,6 +888,10 @@ private fun Root(
                                     playlistError = null
                                     playlistOpen = true
                                 },
+                                onPreviousVideo = { navigatePlaylist(-1) },
+                                onNextVideo = { navigatePlaylist(1) },
+                                hasPreviousVideo = previousVideo != null,
+                                hasNextVideo = nextVideo != null || moreOnSourcePage,
                                 availableParts = VideoParts.available(availableServers),
                                 activePart = selectedServer?.let(VideoParts::partOf),
                                 onSelectPart = { part ->
