@@ -234,8 +234,12 @@ fun DetailScreen(
             ) {
                 Button(
                     onClick = {
+                        val orderedParts = VideoParts.available(d.servers)
+                        val firstCdServers = if (orderedParts.size > 1)
+                            d.servers.filter { VideoParts.partOf(it) == orderedParts.first() }
+                        else d.servers
                         PlaybackDefaults.preferredServer(
-                            VideoParts.firstPartFirst(d.servers),
+                            firstCdServers,
                             app.preferences.getString(PlaybackDefaults.LINE, "auto")
                         )?.let(::play)
                     },
@@ -382,7 +386,9 @@ fun DetailScreen(
                 ) {
                     Icon(Icons.Outlined.PlayCircleOutline, null, Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(server.name)
+                    Text(
+                        (VideoParts.partOf(server)?.let { it + " · " } ?: "") + server.name
+                    )
                 }
             }
         }
