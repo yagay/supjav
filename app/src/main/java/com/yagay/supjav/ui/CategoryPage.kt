@@ -56,7 +56,12 @@ fun CategoryPage(
     // Directory filtering shares the page's inline search field.
 
     LaunchedEffect(initialKind, initialPath) {
-        if (initialKind != null && initialPath.isNotBlank()) {
+        if (initialKind != null && initialPath.isBlank()) {
+            chosenKind = initialKind
+            selectedKind = null
+            selectedPath = ""
+            selectedTitle = ""
+        } else if (initialKind != null && initialPath.isNotBlank()) {
             selectedKind = initialKind
             selectedPath = initialPath
             selectedTitle = initialPath.substringAfterLast('/').replace('-', ' ')
@@ -75,14 +80,11 @@ fun CategoryPage(
         fetching = true
         fetchError = null
         try {
-            val result = app.source.browseDirectory(directoryPageDepth)
+            val result = app.catalog.directory(directoryPageDepth, force = reload > 0)
             directoryHasMore = result.hasMore
             directorySources = result.sourceCount
             if (result.options.isNotEmpty()) {
-                directory = withContext(Dispatchers.IO) {
-                    app.categoryStore.save(result.options)
-                    app.categoryStore.snapshot()
-                }
+                directory = withContext(Dispatchers.IO) { app.categoryStore.snapshot() }
             }
             if (result.failedSourceCount > 0) {
                 fetchError = "部分目录来源暂时不可访问（${result.failedSourceCount} 个），已保留已有分类"
@@ -170,11 +172,13 @@ fun CategoryPage(
                 }
             }
         }
-        val results = directory.filter {
-            it.kind == chosenKind &&
-                (directoryFilter.isBlank() ||
-                    it.label.contains(directoryFilter.trim(), ignoreCase = true) ||
-                    it.path.contains(directoryFilter.trim(), ignoreCase = true))
+        val results = remember(directory, chosenKind, directoryFilter) {
+            directory.filter {
+                it.kind == chosenKind &&
+                    (directoryFilter.isBlank() ||
+                        it.label.contains(directoryFilter.trim(), ignoreCase = true) ||
+                        it.path.contains(directoryFilter.trim(), ignoreCase = true))
+            }.sortedWith(compareBy({ it.label.lowercase() }, { it.path }))
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),

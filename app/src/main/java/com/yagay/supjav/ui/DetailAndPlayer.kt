@@ -62,6 +62,7 @@ fun DetailScreen(
     var detail by remember(video.id) { mutableStateOf<VideoDetail?>(null) }
     var error by remember(video.id) { mutableStateOf<String?>(null) }
     var loading by remember(video.id) { mutableStateOf(true) }
+    var retryRevision by remember(video.id) { mutableIntStateOf(0) }
     var favorite by remember(video.id) { mutableStateOf(false) }
     var resolving by remember(video.id) { mutableStateOf<String?>(null) }
     var playbackError by remember(video.id) { mutableStateOf<String?>(null) }
@@ -71,21 +72,14 @@ fun DetailScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    LaunchedEffect(video.id) {
+    LaunchedEffect(video.id, retryRevision) {
         loading = true
         error = null
         try {
             favorite = withContext(Dispatchers.IO) { app.library.isFavorite(video.id) }
-            val response = app.source.detail(video)
+            val response = app.catalog.detail(video)
             detail = response
             onServersUpdated(response.servers)
-            withContext(Dispatchers.IO) {
-                app.categoryStore.save(response.taxonomy.map {
-                    com.yagay.supjav.data.SupjavSource.BrowseOption(
-                        it.kind, it.path.substringAfterLast('/'), it.label, it.path
-                    )
-                })
-            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -202,16 +196,7 @@ fun DetailScreen(
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (error != null) {
             SupjavEmptyState(error.orEmpty(), onRetry = {
-                detail = null
-                loading = true
-                scope.launch {
-                    try {
-                        detail = app.source.detail(video)
-                        error = null
-                    } catch (e: Exception) {
-                        error = e.message ?: "加载失败"
-                    } finally { loading = false }
-                }
+                retryRevision++
             })
         }
 
@@ -274,6 +259,12 @@ fun DetailScreen(
                     Diagnostics.log("DETAIL_NO_SERVER_EXPORT video=" + video.id)
                     runCatching { Diagnostics.share(context) }
                 }) { Text("导出线路诊断 ZIP") }
+            }
+            if (d.video.publishedAt.isNotBlank() || d.video.durationLabel.isNotBlank()) {
+                Text(listOf(d.video.publishedAt, d.video.durationLabel)
+                    .filter { it.isNotBlank() }.joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (d.actors.isNotEmpty()) {
                 SupjavSectionTitle("演员")

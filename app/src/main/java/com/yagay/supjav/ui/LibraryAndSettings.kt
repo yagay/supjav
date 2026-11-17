@@ -93,6 +93,7 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
     }
     var autoPip by remember { mutableStateOf(prefs.getBoolean("auto_pip", false)) }
     var showPip by remember { mutableStateOf(prefs.getBoolean("manual_pip", true)) }
+    val posterColumns = app.posterColumns
     var autoWebFallback by remember {
         mutableStateOf(prefs.getBoolean("auto_web_fallback", true))
     }
@@ -153,7 +154,24 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
         SupjavSectionTitle("外观")
         Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
             color = MaterialTheme.colorScheme.surface) {
-            SupjavSettingToggle("深色模式", "全应用统一主题", dark, onDark)
+            Column(Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SupjavSettingToggle("深色模式", "全应用统一主题", dark, onDark)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text("视频封面列数", style = MaterialTheme.typography.titleSmall)
+                Text("选择海报密度，所有视频列表统一生效",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0 to "自动", 2 to "2列", 3 to "3列", 4 to "4列").forEach { (count, label) ->
+                        FilterChip(
+                            selected = posterColumns == count,
+                            onClick = { app.updatePosterColumns(count) },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+            }
         }
         SupjavSectionTitle("数据与诊断")
         Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),

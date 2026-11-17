@@ -197,6 +197,31 @@ class SupjavSourceTest {
             com.yagay.supjav.model.FeedKind.MAKER), items.map { it.kind })
     }
 
+    @Test fun parsesCardDateAndDurationOnlyWhenPresent() {
+        val html = """
+          <main><div class="post">
+            <a href="/123456.html" title="Example"><img src="/poster.jpg"/></a>
+            <time datetime="2026-11-16">16 Nov</time>
+            <span class="duration">42:11</span>
+          </div></main>
+        """.trimIndent()
+        val video = source.parseList(html).single()
+        assertEquals("2026-11-16", video.publishedAt)
+        assertEquals("42:11", video.durationLabel)
+    }
+
+    @Test fun parsesMoreThanOneRecognizedServerLine() {
+        val html = """
+          <div class="servers">
+            <button class="btn-server" data-link="abc123">EVS</button>
+            <button data-server="LUC" data-link="xyz456">LUC</button>
+          </div>
+        """.trimIndent()
+        val lines = source.parseServers(html, "https://supjav.com/12345.html")
+        assertEquals(2, lines.size)
+        assertEquals(listOf("EVS", "LUC"), lines.map { it.name })
+    }
+
     @Test fun rejectsLocalOrInsecureMediaTargets() {
         assertFalse(source.isPublicHttps("http://example.com/a.mp4"))
         assertFalse(source.isPublicHttps("https://localhost:1000/"))

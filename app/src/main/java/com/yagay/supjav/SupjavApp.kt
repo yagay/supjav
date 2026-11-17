@@ -9,6 +9,7 @@ import com.yagay.supjav.player.WebPlaybackSession
 import com.yagay.supjav.data.FeedCache
 import com.yagay.supjav.data.SearchStore
 import com.yagay.supjav.data.CategoryStore
+import com.yagay.supjav.data.SiteCatalogRepository
 import com.yagay.supjav.util.Diagnostics
 
 class SupjavApp : Application() {
@@ -18,6 +19,14 @@ class SupjavApp : Application() {
     val feedCache by lazy { FeedCache() }
     val searchStore by lazy { SearchStore(this) }
     val categoryStore by lazy { CategoryStore(this) }
+    val catalog by lazy { SiteCatalogRepository(source, categoryStore) }
+    var posterColumns by androidx.compose.runtime.mutableIntStateOf(-1)
+        private set
+    fun updatePosterColumns(columns: Int) {
+        require(columns in listOf(0, 2, 3, 4))
+        posterColumns = columns
+        preferences.edit().putInt("poster_columns", columns).apply()
+    }
     val playerEngine by lazy { PlaybackEngine(this, library) }
     val webPlayback by lazy { WebPlaybackSession(this, library) }
     val preferences by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
@@ -25,5 +34,6 @@ class SupjavApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Diagnostics.initialize(this)
+        posterColumns = preferences.getInt("poster_columns", 0)
     }
 }

@@ -90,6 +90,13 @@ fun VideoTile(
                     }
                 }
             }
+            if (video.publishedAt.isNotBlank() || video.durationLabel.isNotBlank()) {
+                Text(listOf(video.publishedAt, video.durationLabel)
+                    .filter { it.isNotBlank() }.joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Text(
                 video.title,
                 modifier = Modifier.padding(top = 6.dp),
@@ -141,10 +148,11 @@ fun FeedScreen(
         )
     }
     val scope = rememberCoroutineScope()
-    val layoutSetting = app.preferences.getInt("poster_columns", 0)
+    val layoutSetting = app.posterColumns
     val columns = when (layoutSetting) {
         2 -> GridCells.Fixed(2)
         3 -> GridCells.Fixed(3)
+        4 -> GridCells.Fixed(4)
         else -> GridCells.Adaptive(SupjavMetrics.posterMinWidth)
     }
 
@@ -162,7 +170,7 @@ fun FeedScreen(
         val targetPage = if (forceRefresh) 1 else pageState.page + 1
         val cursor = if (forceRefresh) null else pageState.nextPageUrl
         try {
-            val response = app.source.listPage(kind, value, targetPage, cursor)
+            val response = app.catalog.listing(kind, value, targetPage, cursor)
             val oldCount = data.size
             val previousIds = if (forceRefresh) data.mapTo(HashSet()) { it.id }
                 else emptySet()

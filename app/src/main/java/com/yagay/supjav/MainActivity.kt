@@ -194,14 +194,23 @@ private fun Root(
     fun submitSearch(raw: String, kind: FeedKind) {
         val term = raw.trim()
         if (term.isEmpty()) return
-        activeSearchValue = term
-        activeSearchKind = kind
         searchInput = term
-        searchRevision++
+        searchKind = kind
         if (kind == FeedKind.SEARCH) {
+            activeSearchValue = term
+            activeSearchKind = kind
+            searchRevision++
             recentSearches = (listOf(term) +
                 recentSearches.filterNot { it.equals(term, ignoreCase = true) }).take(20)
             scope.launch(Dispatchers.IO) { app.searchStore.add(term) }
+        } else {
+            // Site search is full-text only. Taxonomy selection must resolve
+            // an observed path, never fabricate /cast/<typed-name>/.
+            activeSearchValue = ""
+            activeSearchKind = kind
+            targetCategoryKind = kind
+            targetCategoryPath = ""
+            tab = SupjavTab.CATEGORY
         }
     }
 

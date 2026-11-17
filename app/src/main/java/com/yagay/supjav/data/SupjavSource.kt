@@ -223,9 +223,16 @@ class SupjavSource {
                 card.selectFirst("h3, .post-title")?.text().orEmpty()
             }.ifBlank { image?.attr("alt").orEmpty() }
                 .ifBlank { anchor.text() }.ifBlank { id }
+            val published = card.selectFirst(
+                "time[datetime], .post-date, .published, .date"
+            )?.let { el -> el.attr("datetime").ifBlank { el.text() } }
+                .orEmpty().trim().take(48)
+            val duration = card.selectFirst(".duration, .video-duration, .length")
+                ?.text().orEmpty().trim().take(24)
             VideoItem(id = id, title = title, coverUrl = cover,
                 detailUrl = url, code = Regex("[A-Za-z]{2,8}[- ]?\\d{2,8}")
-                    .find(title)?.value.orEmpty())
+                    .find(title)?.value.orEmpty(),
+                publishedAt = published, durationLabel = duration)
         }.distinctBy { it.id }
     }
 
@@ -247,26 +254,56 @@ class SupjavSource {
             .filterNot { it.attr("href").contains("/category/cast/") ||
                 it.attr("href").contains("/category/maker/") }
             .map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
-        val servers = doc.select(".btn-server[data-link]").mapIndexed { index, el ->
-            VideoServer(index.toString(), el.text().ifBlank { "Server " + (index + 1) },
-                el.attr("data-link"), video.detailUrl)
-        }.ifEmpty {
-            doc.select("iframe#video[src], #player-wrap iframe[src]").mapIndexed { index, el ->
-                VideoServer(index.toString(), "Player " + (index + 1), el.absUrl("src"), video.detailUrl)
-            }
-        }
+        val servers = parseServers(html, video.detailUrl)
         val relatedRoot = doc.selectFirst(".related, .related-posts, #related")
         val related = relatedRoot?.let { parseList(it.outerHtml(), video.detailUrl) }.orEmpty()
             .filterNot { it.id == video.id }
         val description = doc.selectFirst(".post-content, .entry-content, .post-meta")?.text()
-            .orEmpty().take(1200)
+            .orEmpty().take(3000)
         Diagnostics.log("DETAIL id=" + video.id + " servers=" + servers.size)
         val taxonomy = parseBrowseOptions(html, video.detailUrl)
             .map { BrowseLink(it.kind, it.label, it.path) }
-        VideoDetail(video.copy(title = title, coverUrl = cover, tags = tags, actors = actors),
+        val published = doc.selectFirst("time[datetime], .post-date, .published")
+            ?.let { it.attr("datetime").ifBlank { it.text() } }
+            .orEmpty().trim().take(48).ifBlank { video.publishedAt }
+        val duration = doc.selectFirst(".video-duration, .duration")
+            ?.text().orEmpty().trim().take(24).ifBlank { video.durationLabel }
+        VideoDetail(video.copy(title = title, coverUrl = cover, tags = tags, actors = actors,
+            publishedAt = published, durationLabel = duration),
             description, tags, actors, servers, related, categories, makers, taxonomy)
     }
 
+
+    /**
+     * Extract only recognized player selectors. This stays independent of
+     * resolver / WebView, so all playback paths receive the same line list.
+     */
+    fun parseServers(html: String, detailUrl: String): List<VideoServer> {
+        val doc = Jsoup.parse(html, detailUrl)
+        val entries = doc.select(
+            ".btn-server[data-link], #server-list [data-link], " +
+                ".server-list [data-link], .servers [data-link], " +
+                "[data-server][data-link]"
+        ).mapNotNull { el ->
+            val link = el.attr("data-link").trim()
+            if (link.isBlank() || link.length > 2048) return@mapNotNull null
+            val label = el.text().trim().ifBlank {
+                el.attr("data-server").trim()
+            }.ifBlank { "线路" }
+            label.take(64) to link
+        }.distinctBy { it.second }
+        if (entries.isNotEmpty()) return entries.mapIndexed { index, pair ->
+            VideoServer(index.toString(), pair.first, pair.second, detailUrl)
+        }
+        return doc.select(
+            "iframe#video[src], #player-wrap iframe[src], iframe#player[src]"
+        ).mapNotNull { el ->
+            val link = el.absUrl("src")
+            link.takeIf { it.startsWith("https://") }
+        }.distinct().mapIndexed { index, link ->
+            VideoServer(index.toString(), "Player ${index + 1}", link, detailUrl)
+        }
+    }
 
     data class BrowseOption(
         val kind: FeedKind,

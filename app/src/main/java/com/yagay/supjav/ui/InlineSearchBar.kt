@@ -73,17 +73,16 @@ fun InlineSearchBar(
             placeholder = { Text("搜索作品、番号、演员或标签") },
             leadingIcon = { Icon(Icons.Outlined.Search, null) },
             trailingIcon = {
-                if (activeValue.isNotBlank()) {
-                    IconButton(onClick = {
-                        onClear()
-                        expanded = false
-                        focusManager.clearFocus()
-                    }) {
-                        Icon(Icons.Outlined.Close, "清除搜索")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (query.isNotBlank() || activeValue.isNotBlank()) {
+                        IconButton(onClick = {
+                            onClear()
+                            expanded = false
+                            focusManager.clearFocus()
+                        }) { Icon(Icons.Outlined.Close, "清除搜索") }
                     }
-                } else {
                     IconButton(onClick = { submit() }) {
-                        Icon(Icons.Outlined.Search, "提交搜索")
+                        Icon(Icons.Outlined.Search, "搜索或筛选")
                     }
                 }
             },
@@ -131,6 +130,11 @@ fun InlineSearchBar(
                     }
                 }
             }
+        }
+        if (kind != FeedKind.SEARCH && query.isNotBlank() && !expanded) {
+            Text("正在筛选网站已收录的${kind.title}目录，点击结果进入真实分类页面",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (activeValue.isNotBlank() && !expanded) {
             Row(

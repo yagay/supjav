@@ -7,7 +7,9 @@ data class VideoItem(
     val detailUrl: String,
     val code: String = "",
     val tags: List<String> = emptyList(),
-    val actors: List<String> = emptyList()
+    val actors: List<String> = emptyList(),
+    val publishedAt: String = "",
+    val durationLabel: String = ""
 )
 
 data class VideoServer(
