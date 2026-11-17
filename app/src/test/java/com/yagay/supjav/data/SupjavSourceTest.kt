@@ -71,6 +71,44 @@ class SupjavSourceTest {
         assertEquals("https://supjav.com/?paged=2", result.nextUrl)
     }
 
+    @Test fun numericPagerWithoutNextClassIsRecognized() {
+        val html = """
+          <main><a href="/300001.html">Video</a></main>
+          <div class="pagination">
+            <span class="current">1</span>
+            <a href="/page/2/">2</a>
+            <a href="/page/3/">3</a>
+          </div>
+        """.trimIndent()
+        val result = source.parseListingPage(html, "https://supjav.com/", 1)
+        assertEquals("https://supjav.com/page/2/", result.nextUrl)
+        assertTrue(result.hasPager)
+    }
+
+    @Test fun classlessNextLinkIsRecognized() {
+        val html = """
+          <main><a href="/300001.html">Video</a></main>
+          <nav class="pager">
+            <a href="/page/2/" aria-label="Next Page">Go forward</a>
+          </nav>
+        """.trimIndent()
+        assertEquals("https://supjav.com/page/2/",
+            source.parseListingPage(html, "https://supjav.com/", 1).nextUrl)
+    }
+
+    @Test fun unknownPagerDoesNotInventAnUnsafeCursor() {
+        val html = """
+          <main><a href="/300001.html">Video</a></main>
+          <nav class="pagination">
+            <a href="https://evil.example/page/2/">2</a>
+            <span class="current">1</span>
+          </nav>
+        """.trimIndent()
+        val result = source.parseListingPage(html, "https://supjav.com/", 1)
+        assertNull(result.nextUrl)
+        assertTrue(result.hasPager)
+    }
+
     @Test fun noPaginationReturnsNoCursorWithoutInventingOne() {
         val html = """<article><a href="/300002.html">B</a></article>"""
         val result = source.parseListingPage(html, "https://supjav.com/", 1)

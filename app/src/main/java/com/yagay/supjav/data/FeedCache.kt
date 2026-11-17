@@ -34,6 +34,7 @@ class FeedPageState {
     var page by mutableIntStateOf(0)
     var loading by mutableStateOf(false)
     var refreshing by mutableStateOf(false)
+    var pendingRefresh by mutableStateOf(false)
     var notice by mutableStateOf<String?>(null)
     var nextPageUrl by mutableStateOf<String?>(null)
     var hasPager by mutableStateOf(false)

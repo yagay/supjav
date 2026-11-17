@@ -149,7 +149,13 @@ fun FeedScreen(
     }
 
     suspend fun loadMore(forceRefresh: Boolean = false) {
-        if (pageState.loading || (!forceRefresh && pageState.endReached)) return
+        // A refresh requested during pagination must run after that request.
+        if (pageState.loading) {
+            if (forceRefresh) pageState.pendingRefresh = true
+            return
+        }
+        if (!forceRefresh && pageState.endReached) return
+        if (forceRefresh) pageState.pendingRefresh = false
         pageState.loading = true
         pageState.refreshing = forceRefresh
         pageState.error = null
@@ -192,9 +198,13 @@ fun FeedScreen(
                 it == cursor
             }
             pageState.hasPager = response.hasPager
-            if (response.items.isEmpty() ||
-                (response.hasPager && response.nextUrl == null)) {
-                pageState.endReached = true
+            // Missing 'next' anchors are common with alternate site themes.
+            // Probe the next conventional page instead of declaring end here.
+            // Stop only when the requested page contains no videos.
+            pageState.endReached = response.items.isEmpty()
+            if (response.items.isNotEmpty() && response.nextUrl == null) {
+                com.yagay.supjav.util.Diagnostics.log(
+                    "FEED_NEXT_FALLBACK kind=${kind.name} fromPage=$targetPage")
             }
             if (pageState.duplicatePageStreak >= 2) {
                 // A site which repeats page one for every page number must
@@ -225,6 +235,12 @@ fun FeedScreen(
         }
     }
 
+    LaunchedEffect(pageState, pageState.pendingRefresh, pageState.loading) {
+        if (pageState.pendingRefresh && !pageState.loading) {
+            pageState.pendingRefresh = false
+            loadMore(forceRefresh = true)
+        }
+    }
     LaunchedEffect(pageState, refreshKey) {
         // Toolbar refresh and pull-to-refresh use exactly the same path.
         if (!pageState.loaded && pageState.error == null) {

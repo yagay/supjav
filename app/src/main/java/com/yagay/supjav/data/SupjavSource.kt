@@ -120,7 +120,14 @@ class SupjavSource {
         nextUrl: String? = null
     ): ListingPage = withContext(Dispatchers.IO) {
         val url = nextUrl?.takeIf { isSiteUrl(it) } ?: pageUrl(kind, value, page)
-        val result = parseListingPage(fetch(url), url, page)
+        val html = fetch(url)
+        // A 200 response can still contain a browser verification page.
+        // Do not mistake that for the end of the site's catalogue.
+        if (isAccessChallenge(html)) {
+            Diagnostics.log("FEED_CHALLENGE kind=${kind.name} page=$page")
+            throw IOException("网站返回访问验证页面，暂时无法读取视频列表")
+        }
+        val result = parseListingPage(html, url, page)
         Diagnostics.log(
             "FEED_FETCH kind=${kind.name} page=$page items=${result.items.size}" +
                 " next=${result.nextUrl != null} pager=${result.hasPager}" +
@@ -132,31 +139,52 @@ class SupjavSource {
     suspend fun list(kind: FeedKind, value: String = "", page: Int = 1): List<VideoItem> =
         listPage(kind, value, page).items
 
+    private fun isAccessChallenge(html: String): Boolean {
+        val sample = html.take(100_000).lowercase()
+        return "cf-chl-" in sample ||
+            "challenges.cloudflare.com" in sample ||
+            ("cloudflare" in sample && ("just a moment" in sample ||
+                "verify you are human" in sample || "checking your browser" in sample))
+    }
+
+    /**
+     * Supjav uses more than one pager template. Prefer a validated next-page
+     * link and otherwise let the feed request the site's normal /page/N route.
+     * A visible pager without a recognized 'next' link is NOT proof that
+     * the feed has reached its last page.
+     */
     fun parseListingPage(html: String, base: String = BASE, page: Int = 1): ListingPage {
         val doc = Jsoup.parse(html, base)
         val pager = doc.select(
             ".pagination, .wp-pagenavi, .nav-links, nav.navigation.pagination, " +
-                "ul.page-numbers, .paging-navigation, .pager"
+                "ul.page-numbers, .paging-navigation, .pager, .page-nav, " +
+                ".pagination-container, nav[aria-label*=Pagination]"
         )
-        val nextCandidates = doc.select(
+        val explicitNext = doc.select(
             "link[rel=next][href], a[rel=next][href], " +
                 ".pagination a.next[href], .pagination .next a[href], " +
                 "a.nextpostslink[href], a.next.page-numbers[href], " +
                 ".nav-links a.next[href], .pager a.next[href], " +
                 "a[aria-label=Next][href], a[aria-label='Next page'][href]"
-        ).toList() + pager.select("a[href]").filter { el ->
-            val label = el.text().trim()
-            label in setOf((page + 1).toString(), "›", "»", "下一页", "下一頁", "Next", "Next →")
+        )
+        val pageLinks = pager.select("a[href]").filter { link ->
+            val label = link.text().trim()
+            val aria = link.attr("aria-label").trim().lowercase()
+            val name = link.className().lowercase()
+            label.toIntOrNull() == page + 1 ||
+                label in setOf("›", "»", "→", "下一页", "下一頁", "Next", "Next →", "Next »") ||
+                aria.startsWith("next") || "next" in name.split(' ', '-') ||
+                label.lowercase().startsWith("next")
         }
-        val next = nextCandidates.asSequence()
-            .mapNotNull { it.absUrl("href").takeIf { url -> url.isNotBlank() } }
-            .filter { isSiteUrl(it) }
+        val next = (explicitNext + pageLinks).asSequence()
+            .mapNotNull { link -> link.absUrl("href").takeIf { it.isNotBlank() } }
+            .filter(::isSiteUrl)
             .filter { it.substringBefore('#') != base.substringBefore('#') }
             .firstOrNull()
         return ListingPage(
             items = parseList(html, base),
             nextUrl = next,
-            hasPager = pager.isNotEmpty() || nextCandidates.isNotEmpty()
+            hasPager = pager.isNotEmpty() || explicitNext.isNotEmpty()
         )
     }
 
