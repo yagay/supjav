@@ -10,6 +10,7 @@ import android.content.pm.ActivityInfo
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -24,6 +25,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -352,6 +355,13 @@ fun PlayerScreen(
     var expandedSettings by remember { mutableStateOf(false) }
     var fill by remember { mutableStateOf(prefs.getBoolean("fill_video", false)) }
     var draggingSeek by remember { mutableStateOf(false) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    LaunchedEffect(controlsVisible, isPlaying, pip) {
+        if (controlsVisible && isPlaying && !pip && currentError == null) {
+            delay(3_500)
+            if (!draggingSeek) controlsVisible = false
+        }
+    }
     BackHandler(enabled = landscape && !pip) {
         (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
@@ -381,14 +391,8 @@ fun PlayerScreen(
         }
     }
 
-    Column(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = if (pip || landscape) Modifier.fillMaxSize() else
-                Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
-        ) {
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.fillMaxSize()) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { viewContext ->
@@ -398,7 +402,7 @@ fun PlayerScreen(
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                         this.player = player
-                        useController = landscape && !pip
+                        useController = false
                         keepScreenOn = true
                         setKeepContentOnPlayerReset(true)
                         resizeMode = if (fill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -407,16 +411,25 @@ fun PlayerScreen(
                 },
                 update = {
                     it.player = player
-                    it.useController = landscape && !pip
+                    it.useController = false
                     it.resizeMode = if (fill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         else AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             )
-            if (landscape && !pip) {
-                IconButton(
-                    onClick = { (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT },
-                    modifier = Modifier.align(Alignment.TopEnd)
-                ) { Icon(Icons.Outlined.FullscreenExit, "退出横屏", tint = Color.White) }
+            if (!pip) {
+                // The same gesture surface is used in portrait and landscape.
+                Box(Modifier.fillMaxSize().pointerInput(player, duration) {
+                    detectTapGestures(
+                        onTap = { controlsVisible = !controlsVisible },
+                        onDoubleTap = { offset ->
+                            val delta = if (offset.x < size.width / 2f) -10_000L else 10_000L
+                            val target = (player.currentPosition + delta).coerceAtLeast(0L)
+                                .coerceAtMost(if (duration > 0L) duration else Long.MAX_VALUE)
+                            player.seekTo(target)
+                            controlsVisible = true
+                        }
+                    )
+                })
             }
             if (!pip && isBuffering) {
                 CircularProgressIndicator(
@@ -425,17 +438,28 @@ fun PlayerScreen(
                 )
             }
         }
-        if (!pip && !landscape) {
+        if (!pip && (controlsVisible || currentError != null)) {
+            IconButton(
+                onClick = { engine.savePosition(); onBack() },
+                modifier = Modifier.align(Alignment.TopStart)
+            ) { Icon(Icons.Outlined.ArrowBack, "返回详情", tint = Color.White) }
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                Modifier.align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Brush.verticalGradient(listOf(
+                        Color.Transparent, Color.Black.copy(alpha = 0.88f)
+                    )))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(video?.title ?: "正在播放", style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    maxLines = 1, color = Color.White, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(formatTime(position), style = MaterialTheme.typography.labelSmall)
+                    Text(formatTime(position), style = MaterialTheme.typography.labelSmall,
+                        color = Color.White)
                     Spacer(Modifier.weight(1f))
-                    Text(formatTime(duration), style = MaterialTheme.typography.labelSmall)
+                    Text(formatTime(duration), style = MaterialTheme.typography.labelSmall,
+                        color = Color.White)
                 }
                 Slider(
                     value = if (duration > 0L) (position.toFloat() / duration).coerceIn(0f, 1f)
@@ -459,7 +483,7 @@ fun PlayerScreen(
                 ) {
                     IconButton(onClick = {
                         player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
-                    }) { Icon(Icons.Outlined.Replay10, "后退10秒") }
+                    }) { Icon(Icons.Outlined.Replay10, "后退10秒", tint = Color.White) }
                     FilledIconButton(onClick = {
                         if (isPlaying) player.pause() else player.play()
                     }) {
@@ -471,14 +495,18 @@ fun PlayerScreen(
                     IconButton(onClick = {
                         player.seekTo((player.currentPosition + 10_000L)
                             .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
-                    }) { Icon(Icons.Outlined.Forward10, "快进10秒") }
+                    }) { Icon(Icons.Outlined.Forward10, "快进10秒", tint = Color.White) }
                     IconButton(onClick = { expandedSettings = true }) {
-                        Icon(Icons.Outlined.MoreVert, "播放设置")
+                        Icon(Icons.Outlined.MoreVert, "播放设置", tint = Color.White)
                     }
                     IconButton(onClick = {
                         (context as? Activity)?.requestedOrientation =
-                            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                    }) { Icon(Icons.Outlined.Fullscreen, "横屏") }
+                            if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    }) {
+                        Icon(if (landscape) Icons.Outlined.FullscreenExit
+                            else Icons.Outlined.Fullscreen, "切换横竖屏", tint = Color.White)
+                    }
                 }
                 if (currentError != null) {
                     Surface(
