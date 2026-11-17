@@ -52,6 +52,9 @@ class WebPlaybackSession(
     var durationMs by mutableLongStateOf(0L)
         private set
     private var hasProgress = false
+    // A line/part change supplies an explicit start position, even 0.
+    // This prevents CD2 from restoring CD1's saved timestamp.
+    private var explicitLineStart = false
 
     fun begin(video: VideoItem, startPositionMs: Long = 0L) {
         if (currentVideo?.id == video.id) return
@@ -62,6 +65,7 @@ class WebPlaybackSession(
         positionMs = startPositionMs.coerceIn(0L, 86_400_000L)
         durationMs = 0
         hasProgress = positionMs > 0L
+        explicitLineStart = false
         lastSaveTime = 0
         Diagnostics.log("WEB_SESSION_BEGIN video=" + video.id)
     }
@@ -85,14 +89,16 @@ class WebPlaybackSession(
         positionMs = startPositionMs.coerceIn(0L, 86_400_000L)
         durationMs = 0
         hasProgress = positionMs > 0L
+        explicitLineStart = true
         lastSaveTime = 0
-        Diagnostics.log("WEB_SESSION_LINE_CHANGE video=" + video.id)
+        Diagnostics.log("WEB_SESSION_LINE_CHANGE video=" + video.id +
+            " resumeAtZero=" + (positionMs == 0L))
     }
 
     suspend fun restorePosition(): Long {
         val video = currentVideo ?: return 0
         val currentGeneration = generation
-        if (hasProgress) return positionMs
+        if (hasProgress || explicitLineStart) return positionMs
         if (!context.getSharedPreferences("settings", Context.MODE_PRIVATE)
                 .getBoolean(PlaybackDefaults.RESUME, true)) return 0
         val saved = withContext(Dispatchers.IO) { library.position(video.id) }
@@ -280,6 +286,7 @@ class WebPlaybackSession(
         currentVideo = null
         isPlaying = false
         hasProgress = false
+        explicitLineStart = false
         positionMs = 0
         durationMs = 0
         view = null
