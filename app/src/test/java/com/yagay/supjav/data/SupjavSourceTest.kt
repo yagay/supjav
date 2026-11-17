@@ -24,6 +24,23 @@ class SupjavSourceTest {
         assertEquals("https://supjav.com/thumb.png", items[1].coverUrl)
     }
 
+    @Test fun multipleVideosInsideOneArticleAreNotCollapsedToFirstItem() {
+        val html = """
+          <main><article class="listing">
+            <div class="thumb"><a href="/300010.html" title="ABC-101">
+              <img data-original="/a.jpg"/></a></div>
+            <div class="thumb"><a href="/300011.html" title="ABC-102">
+              <img data-original="/b.jpg"/></a></div>
+            <div class="thumb"><a href="/300012.html" title="ABC-103">
+              <img data-original="/c.jpg"/></a></div>
+          </article></main>
+        """.trimIndent()
+        val result = source.parseList(html)
+        assertEquals(listOf("300010", "300011", "300012"), result.map { it.id })
+        assertEquals("ABC-102", result[1].title)
+        assertEquals("https://supjav.com/b.jpg", result[1].coverUrl)
+    }
+
     @Test fun websitePaginationNextLinkBeatsAssumedPageUrl() {
         val html = """
           <main class="posts">
