@@ -25,6 +25,7 @@ import com.yagay.supjav.data.SupjavSource
 import com.yagay.supjav.model.PlaybackSource
 import com.yagay.supjav.model.VideoItem
 import com.yagay.supjav.util.Diagnostics
+import com.yagay.supjav.player.PlaybackDefaults
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -218,15 +219,21 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
         }.build()
         val item = MediaItem.Builder().setUri(source.url).setMimeType(source.mimeType)
             .setMediaId(video.id).setMediaMetadata(metadata).build()
-        val resumePosition = if (resume && currentVideo?.id == video.id) player.currentPosition
-            else if (resume) library.position(video.id) else 0L
+        val defaults = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val canResume = resume && defaults.getBoolean(PlaybackDefaults.RESUME, true)
+        val resumePosition = if (canResume && currentVideo?.id == video.id)
+            player.currentPosition
+            else if (canResume) library.position(video.id) else 0L
         currentVideo = video
         lastGoodPosition = resumePosition.coerceAtLeast(0L)
         player.setMediaSource(DefaultMediaSourceFactory(factory).createMediaSource(item))
         applyVideoQuality(videoQuality)
+        player.setPlaybackSpeed(
+            PlaybackDefaults.speed(defaults.getFloat(PlaybackDefaults.SPEED, 1f))
+        )
         player.prepare()
         if (resumePosition > 0) player.seekTo(resumePosition)
-        player.playWhenReady = true
+        player.playWhenReady = defaults.getBoolean(PlaybackDefaults.AUTOPLAY, true)
         Diagnostics.log("PLAY id=" + video.id + " mime=" + source.mimeType)
         context.startService(Intent(context, PlaybackService::class.java))
     }

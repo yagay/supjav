@@ -39,6 +39,7 @@ import com.yagay.supjav.ui.*
 import com.yagay.supjav.util.Diagnostics
 import com.yagay.supjav.model.ResolveResult
 import com.yagay.supjav.data.SupjavLine
+import com.yagay.supjav.player.PlaybackDefaults
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -157,7 +158,15 @@ private fun Root(
     }
 
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    var tab by rememberSaveable { mutableStateOf(SupjavTab.RECOMMEND) }
+    var tab by rememberSaveable {
+        mutableStateOf(
+            SupjavTab.valueOf(
+                PlaybackDefaults.startup(
+                    app.preferences.getString(PlaybackDefaults.START_TAB, "RECOMMEND")
+                )
+            )
+        )
+    }
     val routes = remember(app) {
         mutableStateListOf<VideoItem>().apply {
             // OS process death restores the last detail page without

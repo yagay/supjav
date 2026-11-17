@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.yagay.supjav.data.LibraryStore
 import com.yagay.supjav.model.VideoItem
+import com.yagay.supjav.player.PlaybackDefaults
 import com.yagay.supjav.util.Diagnostics
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.CoroutineScope
@@ -92,6 +93,8 @@ class WebPlaybackSession(
         val video = currentVideo ?: return 0
         val currentGeneration = generation
         if (hasProgress) return positionMs
+        if (!context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getBoolean(PlaybackDefaults.RESUME, true)) return 0
         val saved = withContext(Dispatchers.IO) { library.position(video.id) }
         return if (currentGeneration == generation) saved else 0
     }

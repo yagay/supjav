@@ -19,6 +19,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.yagay.supjav.SupjavApp
 import com.yagay.supjav.player.VideoQualityPolicy
+import com.yagay.supjav.player.PlaybackDefaults
 import com.yagay.supjav.data.BrowserHlsDocument
 import com.yagay.supjav.data.MediaSourceDetector
 import com.yagay.supjav.data.SupjavSource
@@ -45,9 +46,22 @@ internal fun EmbeddedHlsPlayer(
     val resume by produceState<Long?>(initialValue = null, source.url, session) {
         value = session.restorePosition()
     }
+    val defaults = app?.preferences
     val document = remember(source.url, source.referer, resume) {
-        resume?.let { BrowserHlsDocument.render(source, it,
-            app?.videoQuality ?: VideoQualityPolicy.DEFAULT) }
+        resume?.let {
+            BrowserHlsDocument.render(
+                source, it,
+                qualityPreference = app?.videoQuality ?: VideoQualityPolicy.DEFAULT,
+                defaultSpeed = PlaybackDefaults.speed(
+                    defaults?.getFloat(PlaybackDefaults.SPEED, 1f) ?: 1f),
+                defaultFill = defaults?.getBoolean(PlaybackDefaults.FIT, false) ?: false,
+                skipSeconds = PlaybackDefaults.skip(
+                    defaults?.getInt(PlaybackDefaults.SEEK, 10) ?: 10),
+                holdSpeed = PlaybackDefaults.holdSpeed(
+                    defaults?.getFloat(PlaybackDefaults.HOLD, 2f) ?: 2f),
+                autoPlay = defaults?.getBoolean(PlaybackDefaults.AUTOPLAY, true) ?: true
+            )
+        }
     }
     if (resume == null) {
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {

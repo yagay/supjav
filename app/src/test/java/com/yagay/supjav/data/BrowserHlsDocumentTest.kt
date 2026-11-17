@@ -56,12 +56,12 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("pointermove"))
         assertTrue(html.contains("pointerup"))
         assertTrue(html.contains("pointercancel"))
-        assertTrue(html.contains("video.playbackRate=2"))
+        assertTrue(html.contains("video.playbackRate=boostRate"))
         assertTrue(html.contains("previousHoldRate"))
         assertTrue(html.contains("g.y<g.height*.30 || g.y>g.height*.70"))
         assertTrue(html.contains("singleTapTimer"))
         assertTrue(html.contains("toggle();"))
-        assertTrue(html.contains("skip(side==='left'?-10:10)"))
+        assertTrue(html.contains("skip(side==='left'?-seekAmount:seekAmount)"))
         assertFalse(html.contains("lastTapTime=0"))
     }
 
@@ -75,7 +75,7 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("pointer-events:none"))
         assertTrue(html.contains("playbackFlash(willPlay)"))
         assertTrue(html.contains("subtleFeedback((seconds>0"))
-        assertTrue(html.contains("subtleFeedback('2×',side,true)"))
+        assertTrue(html.contains("subtleFeedback(boostRate+'×',side,true)"))
         assertTrue(html.contains("clearSubtleFeedback()"))
         assertFalse(html.contains("message('2× 倍速播放"))
         assertFalse(html.contains("message('已恢复"))
@@ -112,6 +112,26 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("state('quality:'+mode)"))
         assertTrue(html.contains("heights.length<=1"))
         assertFalse(html.contains(source.url))
+    }
+
+    @Test fun defaultsApplyToEmbeddedHlsWithoutChangingSignedUrl() {
+        val source = PlaybackSource(
+            "https://media.example.com/hls2/master.m3u8?token=secret",
+            "application/x-mpegURL", "https://evsishere.xyz/e/1"
+        )
+        val html = requireNotNull(BrowserHlsDocument.render(
+            source, 0L, "highest",
+            defaultSpeed = 1.5f, defaultFill = true,
+            skipSeconds = 30, holdSpeed = 3f, autoPlay = false
+        ))
+        assertTrue(html.contains("object-fit:cover"))
+        assertTrue(html.contains("var seekAmount = 30"))
+        assertTrue(html.contains("var boostRate = 3.0"))
+        assertTrue(html.contains("var autoStart = false"))
+        assertTrue(html.contains("var defaultRate = 1.5"))
+        assertTrue(html.contains("skip(-seekAmount)"))
+        assertTrue(html.contains("id=\"aspect\""))
+        assertFalse(html.contains("token=secret"))
     }
 
     @Test fun rejectsMp4AndUnsafeHosts() {

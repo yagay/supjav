@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.yagay.supjav.SupjavApp
 import com.yagay.supjav.player.VideoQualityPolicy
+import com.yagay.supjav.player.PlaybackDefaults
 import com.yagay.supjav.model.VideoItem
 import com.yagay.supjav.util.Diagnostics
 import kotlinx.coroutines.Dispatchers
@@ -97,6 +98,35 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
     var showPip by remember { mutableStateOf(prefs.getBoolean("manual_pip", true)) }
     val posterColumns = app.posterColumns
     val qualityPreference = app.videoQuality
+    var defaultSpeed by remember {
+        mutableFloatStateOf(PlaybackDefaults.speed(
+            prefs.getFloat(PlaybackDefaults.SPEED, 1f)))
+    }
+    var holdSpeed by remember {
+        mutableFloatStateOf(PlaybackDefaults.holdSpeed(
+            prefs.getFloat(PlaybackDefaults.HOLD, 2f)))
+    }
+    var skipSeconds by remember {
+        mutableIntStateOf(PlaybackDefaults.skip(
+            prefs.getInt(PlaybackDefaults.SEEK, 10)))
+    }
+    var defaultFill by remember {
+        mutableStateOf(prefs.getBoolean(PlaybackDefaults.FIT, false))
+    }
+    var preferredLine by remember {
+        mutableStateOf(PlaybackDefaults.line(
+            prefs.getString(PlaybackDefaults.LINE, "auto")))
+    }
+    var autoplay by remember {
+        mutableStateOf(prefs.getBoolean(PlaybackDefaults.AUTOPLAY, true))
+    }
+    var resumePlayback by remember {
+        mutableStateOf(prefs.getBoolean(PlaybackDefaults.RESUME, true))
+    }
+    var startTab by remember {
+        mutableStateOf(PlaybackDefaults.startup(
+            prefs.getString(PlaybackDefaults.START_TAB, "RECOMMEND")))
+    }
     var autoWebFallback by remember {
         mutableStateOf(prefs.getBoolean("auto_web_fallback", true))
     }
@@ -174,6 +204,131 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
                         )
                     }
                 }
+            }
+        }
+        SupjavSectionTitle("默认播放行为")
+        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
+            color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("进入视频时使用这些默认值。播放器内临时调整速度和比例不会修改默认设置。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("默认播放速度", style = MaterialTheme.typography.titleSmall)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PlaybackDefaults.speeds.forEach { value ->
+                        FilterChip(
+                            selected = defaultSpeed == value,
+                            onClick = {
+                                defaultSpeed = value
+                                prefs.edit().putFloat(PlaybackDefaults.SPEED, value).apply()
+                            }, label = { Text(PlaybackDefaults.speedLabel(value)) }
+                        )
+                    }
+                }
+                HorizontalDivider()
+                Text("默认画面比例", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !defaultFill, onClick = {
+                        defaultFill = false
+                        prefs.edit().putBoolean(PlaybackDefaults.FIT, false).apply()
+                    }, label = { Text("适应画面") })
+                    FilterChip(selected = defaultFill, onClick = {
+                        defaultFill = true
+                        prefs.edit().putBoolean(PlaybackDefaults.FIT, true).apply()
+                    }, label = { Text("铺满画面") })
+                }
+                HorizontalDivider()
+                Text("首选播放线路", style = MaterialTheme.typography.titleSmall)
+                Text("点击「立即播放」时优先选择；没有对应线路则使用网站首条。手动切换线路不受影响。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PlaybackDefaults.lineOptions.forEach { line ->
+                        FilterChip(
+                            selected = preferredLine == line,
+                            onClick = {
+                                preferredLine = line
+                                prefs.edit().putString(PlaybackDefaults.LINE, line).apply()
+                            },
+                            label = { Text(if (line == "auto") "网站首条" else line) }
+                        )
+                    }
+                }
+                HorizontalDivider()
+                SupjavSettingToggle(
+                    "自动开始播放", "原生播放器和内置 HLS 使用；第三方网站播放器可能自行自动播放",
+                    autoplay
+                ) {
+                    autoplay = it
+                    prefs.edit().putBoolean(PlaybackDefaults.AUTOPLAY, it).apply()
+                }
+                SupjavSettingToggle(
+                    "自动恢复上次进度", "重新打开视频时从历史位置续播；临时切换线路仍保留当前进度",
+                    resumePlayback
+                ) {
+                    resumePlayback = it
+                    prefs.edit().putBoolean(PlaybackDefaults.RESUME, it).apply()
+                }
+            }
+        }
+        SupjavSectionTitle("默认手势与控制")
+        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
+            color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("双击快进／快退", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PlaybackDefaults.seekSeconds.forEach { seconds ->
+                        FilterChip(
+                            selected = skipSeconds == seconds,
+                            onClick = {
+                                skipSeconds = seconds
+                                prefs.edit().putInt(PlaybackDefaults.SEEK, seconds).apply()
+                            }, label = { Text(seconds.toString() + " 秒") }
+                        )
+                    }
+                }
+                HorizontalDivider()
+                Text("长按两侧播放倍速", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PlaybackDefaults.holdSpeeds.forEach { value ->
+                        FilterChip(
+                            selected = holdSpeed == value,
+                            onClick = {
+                                holdSpeed = value
+                                prefs.edit().putFloat(PlaybackDefaults.HOLD, value).apply()
+                            }, label = { Text(PlaybackDefaults.speedLabel(value)) }
+                        )
+                    }
+                }
+            }
+        }
+        SupjavSectionTitle("启动与外观")
+        Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
+            color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("应用默认打开页面", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        "RECOMMEND" to "首页", "CATEGORY" to "分类",
+                        "RANK" to "排行", "MINE" to "我的"
+                    ).forEach { (key, label) ->
+                        FilterChip(
+                            selected = startTab == key,
+                            onClick = {
+                                startTab = key
+                                prefs.edit().putString(PlaybackDefaults.START_TAB, key).apply()
+                            }, label = { Text(label) }
+                        )
+                    }
+                }
+                Text("下次重新启动 App 生效；恢复中的播放页面优先保留。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         SupjavSectionTitle("外观")

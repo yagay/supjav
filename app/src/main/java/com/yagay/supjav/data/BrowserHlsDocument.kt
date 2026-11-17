@@ -13,7 +13,12 @@ import java.util.Base64
 internal object BrowserHlsDocument {
     fun render(
         source: PlaybackSource, resumePositionMs: Long = 0L,
-        qualityPreference: String = "highest"
+        qualityPreference: String = "highest",
+        defaultSpeed: Float = 1f,
+        defaultFill: Boolean = false,
+        skipSeconds: Int = 10,
+        holdSpeed: Float = 2f,
+        autoPlay: Boolean = true
     ): String? {
         if (source.mimeType != "application/x-mpegURL" ||
             MediaSourceDetector.origin(source.url) == null ||
@@ -21,6 +26,11 @@ internal object BrowserHlsDocument {
         val encoded = Base64.getEncoder().encodeToString(source.url.toByteArray(Charsets.UTF_8))
         val resumeSeconds = (resumePositionMs.coerceIn(0, 86_400_000) / 1000L)
         val qualityToken = com.yagay.supjav.player.VideoQualityPolicy.normalize(qualityPreference)
+        val playbackSpeed = com.yagay.supjav.player.PlaybackDefaults.speed(defaultSpeed)
+        val playbackHold = com.yagay.supjav.player.PlaybackDefaults.holdSpeed(holdSpeed)
+        val playbackSkip = com.yagay.supjav.player.PlaybackDefaults.skip(skipSeconds)
+        val playbackFit = if (defaultFill) "cover" else "contain"
+        val playbackAuto = if (autoPlay) "true" else "false"
         return """
             <!doctype html>
             <html lang="zh"><head><meta charset="UTF-8">
@@ -29,7 +39,7 @@ internal object BrowserHlsDocument {
             *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
             html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Roboto,"Noto Sans",sans-serif}
             #player{position:relative;width:100%;height:100%;height:100dvh;overflow:hidden;background:#000}
-            video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+            video{position:absolute;inset:0;width:100%;height:100%;object-fit:$playbackFit;background:#000}
             #gestures{position:absolute;inset:0;z-index:2;touch-action:none;user-select:none}
             #chrome{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:1;transition:opacity .22s ease}
             #chrome.hidden{opacity:0}
@@ -96,9 +106,9 @@ internal object BrowserHlsDocument {
                   <button class="top-button" id="rotate" aria-label="横屏或竖屏">⛶</button>
                 </div>
                 <div id="center">
-                  <button class="skip" id="back10" aria-label="快退10秒">↶10</button>
+                  <button class="skip" id="back10" aria-label="快退$playbackSkip秒">↶$playbackSkip</button>
                   <button id="play" aria-label="播放或暂停">▶</button>
-                  <button class="skip" id="forward10" aria-label="快进10秒">10↷</button>
+                  <button class="skip" id="forward10" aria-label="快进$playbackSkip秒">$playbackSkip↷</button>
                 </div>
                 <div id="bottom">
                   <div class="time-row">
@@ -108,6 +118,7 @@ internal object BrowserHlsDocument {
                          min="0" max="1000" value="0" step="1" disabled>
                   <div class="actions">
                     <button id="speed" class="pill" aria-label="调整播放速度">1.0×</button>
+                    <button id="aspect" class="pill" aria-label="切换画面比例">比例</button>
                     <button id="lines" class="pill" aria-label="切换播放线路">⇄</button>
                     <button id="quality" class="pill" aria-label="切换视频画质" hidden>HD</button>
                     <span style="flex:1"></span>
@@ -140,6 +151,11 @@ internal object BrowserHlsDocument {
               var playFlash = document.getElementById('playFlash');
               var gestureFeedbackTimer = null, playFlashTimer = null;
               var speed = document.getElementById('speed');
+              var aspect = document.getElementById('aspect');
+              var seekAmount = $playbackSkip;
+              var boostRate = $playbackHold;
+              var autoStart = $playbackAuto;
+              var defaultRate = $playbackSpeed;
               var quality = document.getElementById('quality');
               var qualityMenu = document.getElementById('qualityMenu');
               var qualityMode = '$qualityToken';
@@ -147,6 +163,12 @@ internal object BrowserHlsDocument {
               var player = null;
               var hideTimer = null, hintTimer = null, scrubbing = false;
               var speedList = [0.75,1,1.25,1.5,2], speedIndex = 1;
+              speedIndex = speedList.indexOf(defaultRate);
+              if(speedIndex<0)speedIndex=1;
+              video.playbackRate=defaultRate;
+              speed.textContent=defaultRate+'×';
+              aspect.textContent=video.style.objectFit==='cover'?'铺满':'适应';
+              video.style.objectFit='$playbackFit';
               function state(code){ console.log('SUPJAV_HLS_STATE:' + code); }
               function reportProgress(force){
                 var now = Date.now();
@@ -242,8 +264,8 @@ internal object BrowserHlsDocument {
               }
               function rotate(){ state('rotate');chromeVisible(true); }
               document.getElementById('play').addEventListener('click',toggle);
-              document.getElementById('back10').addEventListener('click',function(){skip(-10);});
-              document.getElementById('forward10').addEventListener('click',function(){skip(10);});
+              document.getElementById('back10').addEventListener('click',function(){skip(-seekAmount);});
+              document.getElementById('forward10').addEventListener('click',function(){skip(seekAmount);});
               document.getElementById('back').addEventListener('click',function(){state('website');});
               document.getElementById('rotate').addEventListener('click',rotate);
               document.getElementById('rotateBottom').addEventListener('click',rotate);
@@ -323,6 +345,12 @@ internal object BrowserHlsDocument {
                 qualityMenu.hidden=false;
                 chromeVisible(true);
               });
+              aspect.textContent='$playbackFit'==='cover'?'铺满':'适应';
+              aspect.addEventListener('click',function(){
+                video.style.objectFit=video.style.objectFit==='cover'?'contain':'cover';
+                aspect.textContent=video.style.objectFit==='cover'?'铺满':'适应';
+                chromeVisible(true);
+              });
               speed.addEventListener('click',function(){
                 speedIndex=(speedIndex+1)%speedList.length;
                 video.playbackRate=speedList[speedIndex];
@@ -394,9 +422,9 @@ internal object BrowserHlsDocument {
                     clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
                     previousHoldRate=video.playbackRate;
                     holdWasPaused=video.paused;
-                    video.playbackRate=2;
+                    video.playbackRate=boostRate;
                     if(video.paused)video.play().catch(function(){});
-                    subtleFeedback('2×',side,true);
+                    subtleFeedback(boostRate+'×',side,true);
                   },420);
                 }
               });
@@ -448,7 +476,7 @@ internal object BrowserHlsDocument {
                   lastTap.side===side && side!=='center' &&
                   Math.hypot(lastTap.x-g.x,lastTap.y-g.y)<42){
                   clearTimeout(singleTapTimer);singleTapTimer=null;lastTap=null;
-                  skip(side==='left'?-10:10);
+                  skip(side==='left'?-seekAmount:seekAmount);
                   return;
                 }
                 clearTimeout(singleTapTimer);
@@ -501,7 +529,7 @@ internal object BrowserHlsDocument {
                     state('manifest');
                     renderQualityMenu();
                     selectQualityLevel(qualityMode);
-                    video.play().catch(function(){state('tap-play');message('请点击播放');});
+                    if(autoStart)video.play().catch(function(){state('tap-play');message('请点击播放');});
                   });
                   player.on(Hls.Events.LEVEL_SWITCHED,function(){paintQualityLabel();});
                   var networkRecoveries=0,mediaRecoveries=0;
@@ -543,7 +571,7 @@ internal object BrowserHlsDocument {
                   player.attachMedia(video);
                 }else if(video.canPlayType('application/vnd.apple.mpegurl')){
                   state('native-hls');video.src=mediaUrl;
-                  video.play().catch(function(){state('tap-play');message('请点击播放');});
+                  if(autoStart)video.play().catch(function(){state('tap-play');message('请点击播放');});
                 }else{state('hlsjs-unavailable');message('HLS 播放器不可用');}
               }catch(e){state('player-exception');message('播放器初始化失败');}
             })();

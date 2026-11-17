@@ -38,6 +38,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import com.yagay.supjav.player.VideoQualityPolicy
+import com.yagay.supjav.player.PlaybackDefaults
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -208,7 +209,12 @@ fun DetailScreen(
                 Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = { d.servers.firstOrNull()?.let(::play) },
+                    onClick = {
+                        PlaybackDefaults.preferredServer(
+                            d.servers,
+                            app.preferences.getString(PlaybackDefaults.LINE, "auto")
+                        )?.let(::play)
+                    },
                     modifier = Modifier.weight(1f),
                     enabled = d.servers.isNotEmpty() && resolving == null,
                     shape = RoundedCornerShape(SupjavMetrics.controlRadius)
@@ -368,7 +374,16 @@ fun PlayerScreen(
     var expandedSettings by remember { mutableStateOf(false) }
     var qualityPickerOpen by remember { mutableStateOf(false) }
     var qualityHeights by remember { mutableStateOf(engine.availableVideoHeights()) }
-    var fill by remember { mutableStateOf(prefs.getBoolean("fill_video", false)) }
+    var fill by remember(video?.id) {
+        mutableStateOf(prefs.getBoolean(PlaybackDefaults.FIT, false))
+    }
+    val skipSeconds = PlaybackDefaults.skip(
+        prefs.getInt(PlaybackDefaults.SEEK, 10)
+    )
+    val holdSpeed = PlaybackDefaults.holdSpeed(
+        prefs.getFloat(PlaybackDefaults.HOLD, 2f)
+    )
+    val skipMs = skipSeconds * 1000L
     var draggingSeek by remember { mutableStateOf(false) }
     var gestureScrubbing by remember { mutableStateOf(false) }
     var gesturePositionMs by remember { mutableLongStateOf(0L) }
@@ -510,7 +525,7 @@ fun PlayerScreen(
                                 }
                             )
                         }
-                        .pointerInput(player, duration) {
+                        .pointerInput(player, duration, skipSeconds, holdSpeed) {
                             detectTapGestures(
                                 onTap = {
                                     // Single tap controls playback, not UI opacity.
@@ -528,8 +543,8 @@ fun PlayerScreen(
                                 },
                                 onDoubleTap = { offset ->
                                     val deltaMs = when {
-                                        offset.x < size.width * .38f -> -10_000L
-                                        offset.x > size.width * .62f -> 10_000L
+                                        offset.x < size.width * .38f -> -skipMs
+                                        offset.x > size.width * .62f -> skipMs
                                         else -> 0L
                                     }
                                     if (deltaMs != 0L) {
@@ -548,7 +563,7 @@ fun PlayerScreen(
                                         pressBoostOriginal = player.playbackParameters.speed
                                         pressBoostWasPaused = !player.playWhenReady
                                         pressBoostSide = if (offset.x < size.width / 2f) -1 else 1
-                                        player.setPlaybackSpeed(2f)
+                                        player.setPlaybackSpeed(holdSpeed)
                                         if (!player.playWhenReady) player.play()
                                     }
                                 },
@@ -610,7 +625,8 @@ fun PlayerScreen(
                     "pause" -> Icon(Icons.Outlined.Pause, "暂停", tint = Color.White.copy(alpha=.9f),
                         modifier = Modifier.size(27.dp))
                     "skip" -> Text(
-                        if (direction < 0) "−10s" else "+10s",
+                        if (direction < 0) "−" + skipSeconds + "s"
+                            else "+" + skipSeconds + "s",
                         color = Color.White.copy(alpha = .9f),
                         style = MaterialTheme.typography.labelMedium
                     )
@@ -619,7 +635,7 @@ fun PlayerScreen(
         }
         if (!pip && pressBoostOriginal != null) {
             Text(
-                "2×",
+                PlaybackDefaults.speedLabel(holdSpeed),
                 modifier = Modifier.align(
                     if (pressBoostSide < 0) Alignment.CenterStart else Alignment.CenterEnd
                 ).padding(horizontal = 22.dp)
@@ -687,8 +703,12 @@ fun PlayerScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = {
-                        player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
-                    }) { Icon(Icons.Outlined.Replay10, "后退10秒", tint = Color.White) }
+                        player.seekTo((player.currentPosition - skipMs).coerceAtLeast(0L))
+                    }) {
+                        if (skipSeconds == 10) Icon(Icons.Outlined.Replay10,
+                            "后退10秒", tint = Color.White)
+                        else Text("−" + skipSeconds + "s", color = Color.White)
+                    }
                     FilledIconButton(onClick = {
                         if (isPlaying) player.pause() else player.play()
                     }) {
@@ -698,9 +718,13 @@ fun PlayerScreen(
                         )
                     }
                     IconButton(onClick = {
-                        player.seekTo((player.currentPosition + 10_000L)
+                        player.seekTo((player.currentPosition + skipMs)
                             .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
-                    }) { Icon(Icons.Outlined.Forward10, "快进10秒", tint = Color.White) }
+                    }) {
+                        if (skipSeconds == 10) Icon(Icons.Outlined.Forward10,
+                            "快进10秒", tint = Color.White)
+                        else Text("+" + skipSeconds + "s", color = Color.White)
+                    }
                     IconButton(onClick = onShowLinePicker, modifier = Modifier.size(42.dp)) {
                         Icon(Icons.Outlined.Tune, "切换播放线路", tint = Color.White)
                     }
@@ -799,11 +823,11 @@ fun PlayerScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !fill, onClick = {
                     fill = false
-                    prefs.edit().putBoolean("fill_video", false).apply()
+                    // This player-only change does not alter the saved default.
                 }, label = { Text("适应画面") })
                 FilterChip(selected = fill, onClick = {
                     fill = true
-                    prefs.edit().putBoolean("fill_video", true).apply()
+                    // This player-only change does not alter the saved default.
                 }, label = { Text("铺满画面") })
             }
             Text("播放界面内可直接点击线路图标切换；需要人工验证的线路不会自动跳过验证。",
