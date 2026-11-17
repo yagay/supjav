@@ -87,15 +87,20 @@ class WebPlaybackSession(private val library: LibraryStore) {
         if (view?.get() === player) view = null
     }
 
-    fun pauseForBackground() {
-        if (!isPlaying) return
+    private fun pauseWebView() {
         val webView = view?.get() ?: return
         webView.post {
-            webView.evaluateJavascript(
-                "(function(){var v=document.getElementById('video');if(v)v.pause();})()",
-                null
-            )
+            runCatching {
+                webView.evaluateJavascript(
+                    "(function(){var v=document.getElementById('video');if(v)v.pause();})()",
+                    null
+                )
+            }
         }
+    }
+
+    fun pauseForBackground() {
+        if (isPlaying) pauseWebView()
     }
 
     fun saveProgress() {
@@ -107,6 +112,7 @@ class WebPlaybackSession(private val library: LibraryStore) {
     }
 
     fun close() {
+        pauseWebView()
         saveProgress()
         generation++
         currentVideo = null
