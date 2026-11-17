@@ -1,0 +1,178 @@
+package com.yagay.supjav.ui
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.yagay.supjav.SupjavApp
+import com.yagay.supjav.data.SupjavSource
+import com.yagay.supjav.model.FeedKind
+import com.yagay.supjav.model.VideoItem
+import kotlinx.coroutines.CancellationException
+
+/** Category index reads actual site links, not a guessed list of category labels. */
+@Composable
+fun CategoryPage(
+    app: SupjavApp,
+    onVideo: (VideoItem) -> Unit,
+    initialKind: FeedKind? = null,
+    initialPath: String = ""
+) {
+    var directory by remember { mutableStateOf<List<SupjavSource.BrowseOption>>(emptyList()) }
+    var fetching by remember { mutableStateOf(false) }
+    var fetchError by remember { mutableStateOf<String?>(null) }
+    var reload by remember { mutableIntStateOf(0) }
+    var chosenKind by rememberSaveable { mutableStateOf(FeedKind.CATEGORY) }
+    var selectedKind by remember { mutableStateOf<FeedKind?>(null) }
+    var selectedPath by rememberSaveable { mutableStateOf("") }
+    var selectedTitle by rememberSaveable { mutableStateOf("") }
+    var filter by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(initialKind, initialPath) {
+        if (initialKind != null && initialPath.isNotBlank()) {
+            selectedKind = initialKind
+            selectedPath = initialPath
+            selectedTitle = initialPath.substringAfterLast('/').replace('-', ' ')
+            chosenKind = initialKind
+        }
+    }
+    LaunchedEffect(app, reload) {
+        fetching = true
+        fetchError = null
+        try {
+            directory = app.source.browseOptions()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            fetchError = e.message?.take(150) ?: "分类目录读取失败"
+        } finally {
+            fetching = false
+        }
+    }
+    val current = selectedKind
+    if (current != null && selectedPath.isNotEmpty()) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = {
+                    selectedKind = null
+                    selectedPath = ""
+                }) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回分类目录")
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(selectedTitle, style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(current.title, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            FeedScreen(app, current, selectedPath, onVideo)
+        }
+        return
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = filter,
+            onValueChange = { filter = it },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            leadingIcon = { Icon(Icons.Outlined.Search, null) },
+            placeholder = { Text("筛选分类、标签、演员或制作商") },
+            singleLine = true,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+        )
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(FeedKind.CATEGORY, FeedKind.TAG, FeedKind.ACTOR, FeedKind.MAKER)
+                .forEach { kind ->
+                    FilterChip(
+                        selected = chosenKind == kind,
+                        onClick = { chosenKind = kind },
+                        label = { Text(
+                            when (kind) {
+                                FeedKind.CATEGORY -> "分类"
+                                FeedKind.TAG -> "标签"
+                                FeedKind.ACTOR -> "演员"
+                                else -> "制作商"
+                            }
+                        ) }
+                    )
+                }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SupjavSectionTitle(
+                chosenKind.title,
+                "根据网站导航实时读取，按需显示"
+            )
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { reload++ }) { Icon(Icons.Outlined.Refresh, "刷新分类") }
+        }
+        if (fetching) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (fetchError != null) {
+            SupjavEmptyState(fetchError.orEmpty(), onRetry = { reload++ })
+        }
+        val results = directory.filter {
+            it.kind == chosenKind &&
+                (filter.isBlank() || it.label.contains(filter.trim(), ignoreCase = true) ||
+                    it.path.contains(filter.trim(), ignoreCase = true))
+        }
+        if (!fetching && fetchError == null && results.isEmpty()) {
+            SupjavEmptyState(if (directory.isEmpty()) {
+                "网站尚未返回目录。当前可能存在访问限制。"
+            } else "这一类暂无可用目录项，可以切换其他分类。")
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(148.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            items(results, key = { it.path }) { option ->
+                OutlinedCard(
+                    onClick = {
+                        selectedKind = option.kind
+                        selectedPath = option.path
+                        selectedTitle = option.label
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Outlined.Category, null, Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary)
+                        Text(option.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+}
