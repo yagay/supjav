@@ -505,9 +505,13 @@ fun PlayerScreen(
                                     if (player.playWhenReady) {
                                         player.pause()
                                         flash("pause")
+                                        // Paused viewers need access to the
+                                        // line/pip/settings controls.
+                                        controlsVisible = true
                                     } else {
                                         player.play()
                                         flash("play")
+                                        controlsVisible = false
                                     }
                                 },
                                 onDoubleTap = { offset ->

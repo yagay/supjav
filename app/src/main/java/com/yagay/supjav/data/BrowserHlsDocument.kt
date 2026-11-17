@@ -213,8 +213,9 @@ internal object BrowserHlsDocument {
                 playbackFlash(willPlay);
                 if(willPlay){video.play().catch(function(){message('点击播放按钮重试');state('tap-play');});}
                 else video.pause();
-                // A tap should not splash the entire control bar over the video.
-                if(!willPlay)chromeVisible(true);
+                // When pausing, show the controls; when resuming, leave the
+                // video unobstructed except for the brief play icon.
+                chromeVisible(!willPlay);
               }
               function skip(seconds){
                 if(!isFinite(video.duration) || video.duration<=0){message('暂时无法快进');return;}
@@ -376,10 +377,18 @@ internal object BrowserHlsDocument {
               document.addEventListener('visibilitychange',function(){
                 if(document.hidden)clearGesture();
               });
-              video.addEventListener('play',function(){playbackIcon();chromeVisible(true);});
+              video.addEventListener('play',function(){
+                playbackIcon();
+                if(chrome.classList.contains('hidden') ||
+                   (activeGesture && activeGesture.holding))chromeVisible(false);
+                else chromeVisible(true);
+              });
               video.addEventListener('pause',function(){playbackIcon();chromeVisible(true);reportProgress(true);});
               video.addEventListener('playing',function(){
-                playbackIcon();spinner.classList.add('hide');state('playing');chromeVisible(true);reportProgress(true);
+                playbackIcon();spinner.classList.add('hide');state('playing');
+                if(chrome.classList.contains('hidden'))chromeVisible(false);
+                else chromeVisible(true);
+                reportProgress(true);
               });
               video.addEventListener('waiting',function(){
                 spinner.classList.remove('hide');state('buffering');
