@@ -8,6 +8,7 @@ import com.yagay.supjav.player.PlaybackEngine
 import com.yagay.supjav.data.FeedCache
 import com.yagay.supjav.data.SearchStore
 import com.yagay.supjav.data.CategoryStore
+import com.yagay.supjav.util.Diagnostics
 
 class SupjavApp : Application() {
     val source by lazy { SupjavSource() }
@@ -18,4 +19,9 @@ class SupjavApp : Application() {
     val categoryStore by lazy { CategoryStore(this) }
     val playerEngine by lazy { PlaybackEngine(this, library) }
     val preferences by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
+
+    override fun onCreate() {
+        super.onCreate()
+        Diagnostics.initialize(this)
+    }
 }
