@@ -41,7 +41,7 @@ internal class OkHttpMediaGateway : MediaGateway {
     private val client = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(18, TimeUnit.SECONDS)
-        .callTimeout(25, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS)
         .followRedirects(false)
         .followSslRedirects(false)
         .dns(object : Dns {
@@ -60,6 +60,12 @@ internal class OkHttpMediaGateway : MediaGateway {
         }).build()
 
     private fun isCarrierGradeNat(bytes: ByteArray): Boolean {
+        if (bytes.size == 16) {
+            val first = bytes[0].toInt() and 255
+            val second = bytes[1].toInt() and 255
+            // IPv6 ULA and link-local allocations must never be contacted.
+            return (first and 0xfe) == 0xfc || first == 0xfe && (second and 0xc0) == 0x80
+        }
         if (bytes.size != 4) return false
         val a = bytes[0].toInt() and 255
         val b = bytes[1].toInt() and 255
@@ -110,7 +116,12 @@ internal class OkHttpMediaGateway : MediaGateway {
                     post(json.toRequestBody("application/json".toMediaType()))
                 } else get()
             }.build()
-            client.newCall(req).execute().use { response ->
+            val call = client.newCall(req)
+            call.timeout().timeout(
+                if (range) 8L else if (method == "POST") 12L else 15L,
+                TimeUnit.SECONDS
+            )
+            call.execute().use { response ->
                 Diagnostics.log("MEDIA_HTTP method=" + method +
                     " hop=" + hop + " host=" + URI(url).host +
                     " status=" + response.code)

@@ -47,8 +47,12 @@ class PlaybackResolver(private val source: SupjavSource) {
         var httpBlocked = false
         var pages = 0
         var probes = 0
+        // Avoid keeping the user stuck on a native spinner when a provider
+        // needs its real browser environment.
+        val deadlineNs = System.nanoTime() + 30_000_000_000L
         try {
-            while (pending.isNotEmpty() && pages < 8 && probes < 16) {
+            while (pending.isNotEmpty() && pages < 6 && probes < 12 &&
+                System.nanoTime() < deadlineNs) {
                 val (url, referer) = pending.removeFirst()
                 if (!visited.add(url)) continue
                 pages++
@@ -97,6 +101,21 @@ class PlaybackResolver(private val source: SupjavSource) {
                 }
                 if (page.status !in 200..299) {
                     browserReason = "中转页面 HTTP " + page.status
+                    continue
+                }
+                // Some HLS endpoints use extensionless paths; the manifest body
+                // (not the URL suffix) determines the media format.
+                if (page.body.trimStart().startsWith("#EXTM3U")) {
+                    val probe = gateway.probe(page.url, referer, true)
+                    probes++
+                    Diagnostics.log("RESOLVE_MANIFEST_PROBE status=" + probe.status +
+                        " kind=" + probe.reason)
+                    if (probe.playable) {
+                        return@withContext ResolveResult.Playable(
+                            PlaybackSource(probe.finalUrl ?: page.url,
+                                "application/x-mpegURL", referer))
+                    }
+                    if (probe.status in listOf(403, 429)) httpBlocked = true
                     continue
                 }
                 if (Regex("""(?i)(?:captcha|robot verification|cloudflare challenge|verify you are human)""")
@@ -167,6 +186,8 @@ class PlaybackResolver(private val source: SupjavSource) {
             Diagnostics.log("RESOLVE_FAILED line=" + line.name +
                 " type=" + e.javaClass.simpleName)
         }
+        if (System.nanoTime() >= deadlineNs) Diagnostics.log(
+            "RESOLVE_TIME_BUDGET line=" + line.name + " pages=" + pages)
         val detail = if (httpBlocked) "源站限制原生网络请求" else browserReason.take(55)
         Diagnostics.log("RESOLVE_BROWSER_FALLBACK line=" + line.name +
             " pages=" + pages + " probes=" + probes +

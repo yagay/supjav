@@ -85,6 +85,7 @@ class SupjavServerAdaptersTest {
         val extraction = SupjavServerAdapters.extract(
             SupjavLine.VOE, html, "https://voe.sx/e/abc")
         assertEquals(url, extraction.candidates.firstOrNull()?.url)
+        assertEquals(1, extraction.candidates.size)
     }
 
     @Test fun vasApiUsesSameOriginAndFilecode() {

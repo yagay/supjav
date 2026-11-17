@@ -84,24 +84,31 @@ internal object SupjavServerAdapters {
             val absolute = runCatching { URI(documentUrl).resolve(cleaned).toString() }.getOrNull()
             if (absolute != null && classify(absolute, documentUrl) != null) urls.add(absolute)
         }
-        // Actual video declarations take precedence over arbitrary links in HTML.
-        doc.select("video[src], video source[src], source[type*=video][src]").forEach {
-            add(it.absUrl("src"))
+        val declared = when (line) {
+            SupjavLine.VOE -> voeDeclaredSource(doc)
+            SupjavLine.ST -> streamtapeDeclaredSource(html)
+            else -> null
         }
-        if (line == SupjavLine.FST) fstDeclaredSource(html, documentUrl)?.let(::add)
-        if (line == SupjavLine.ST) streamtapeDeclaredSource(html)?.let(::add)
-        if (line == SupjavLine.VOE) voeDeclaredSource(doc)?.let(::add)
         val scriptText = doc.select("script:not([src])")
             .joinToString("\n") { it.data().ifBlank { it.html() } }.take(400_000)
-        for (text in listOf(scriptText, unpackPacker(scriptText).orEmpty())) {
-            for (match in explicitMedia.findAll(text)) {
-                val value = clean(match.groupValues[1])
-                if (value.startsWith("https://")) add(value)
+        if (declared != null) {
+            // VOE and ST often include valid-looking advertisement/decoy URLs.
+            // A recognized player configuration must not fall back to those.
+            add(declared)
+        } else {
+            doc.select("video[src], video source[src], source[type*=video][src]").forEach {
+                add(it.absUrl("src"))
             }
-            // Fallback absolute URL search only in a script declaring a player.
-            if (Regex("""(?i)\b(?:jwplayer|hls|sources|player\.setup|videojs)\b""")
-                    .containsMatchIn(text)) {
-                mediaUrl.findAll(text).take(10).forEach { add(it.value) }
+            if (line == SupjavLine.FST) fstDeclaredSource(html, documentUrl)?.let(::add)
+            for (text in listOf(scriptText, unpackPacker(scriptText).orEmpty())) {
+                for (match in explicitMedia.findAll(text)) {
+                    val value = clean(match.groupValues[1])
+                    if (value.startsWith("https://")) add(value)
+                }
+                if (Regex("""(?i)\b(?:jwplayer|hls|sources|player\.setup|videojs)\b""")
+                        .containsMatchIn(text)) {
+                    mediaUrl.findAll(text).take(10).forEach { add(it.value) }
+                }
             }
         }
         val next = LinkedHashSet<String>()
