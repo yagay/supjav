@@ -742,7 +742,7 @@ fun PlayerScreen(
                     .padding(12.dp)
             ) {
                 Icon(
-                    Icons.Outlined.Pause, "已暂停，点击画面继续播放",
+                    Icons.Outlined.Pause, "已暂停，请点击下方播放按钮继续播放",
                     tint = Color.White, modifier = Modifier.size(32.dp)
                 )
             }
@@ -765,6 +765,47 @@ fun PlayerScreen(
                 onClick = { engine.savePosition(); onBack() },
                 modifier = Modifier.align(Alignment.TopStart)
             ) { Icon(Icons.Outlined.ArrowBack, "返回详情", tint = Color.White) }
+            // Less frequently used actions belong above the video, away from
+            // the timeline and transport controls. Keep the trailing settings
+            // action anchored when optional quality/PiP actions are unavailable.
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd)
+                    .padding(end = 12.dp, top = 4.dp)
+                    .background(Color.Black.copy(alpha = .32f), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onShowLinePicker,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(Icons.Outlined.Tune, "切换播放线路", tint = Color.White)
+                }
+                if (qualityHeights.size > 1) {
+                    IconButton(
+                        onClick = { qualityPickerOpen = true },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Text("HD", color = Color.White,
+                            style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                if (prefs.getBoolean("manual_pip", true)) {
+                    IconButton(
+                        onClick = enterPip, modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(Icons.Outlined.PictureInPictureAlt, "画中画",
+                            tint = Color.White)
+                    }
+                }
+                IconButton(
+                    onClick = { expandedSettings = true },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(Icons.Outlined.MoreVert, "播放设置", tint = Color.White)
+                }
+            }
             Column(
                 Modifier.align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -813,109 +854,64 @@ fun PlayerScreen(
                         )
                     }
                 )
-                // Transport controls get their own centered row. Previously
-                // all eight buttons shared one row and overflowed narrow phones.
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        modifier = Modifier.size(46.dp),
-                        onClick = {
-                            player.seekTo((player.currentPosition - skipMs)
-                                .coerceAtLeast(0L))
-                        }
+                // All bottom controls share one row: the three transport
+                // buttons stay centered; fullscreen is anchored to the right.
+                // There is no second icon row below the transport buttons.
+                Box(Modifier.fillMaxWidth().height(48.dp)) {
+                    Row(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (skipSeconds == 10) Icon(Icons.Outlined.Replay10,
-                            "后退10秒", tint = Color.White)
-                        else Text("−" + skipSeconds + "s", color = Color.White)
-                    }
-                    Spacer(Modifier.width(18.dp))
-                    FilledIconButton(
-                        modifier = Modifier.size(48.dp),
-                        onClick = {
-                            if (player.playWhenReady) player.pause() else player.play()
-                            controlsVisible = true
+                        IconButton(
+                            modifier = Modifier.size(44.dp),
+                            onClick = {
+                                player.seekTo((player.currentPosition - skipMs)
+                                    .coerceAtLeast(0L))
+                            }
+                        ) {
+                            if (skipSeconds == 10) Icon(Icons.Outlined.Replay10,
+                                "后退10秒", tint = Color.White)
+                            else Text("−" + skipSeconds + "s", color = Color.White)
                         }
+                        FilledIconButton(
+                            modifier = Modifier.size(48.dp),
+                            onClick = {
+                                if (player.playWhenReady) player.pause() else player.play()
+                                controlsVisible = true
+                            }
+                        ) {
+                            Icon(
+                                if (playWhenReady) Icons.Outlined.Pause
+                                else Icons.Outlined.PlayArrow,
+                                "播放或暂停"
+                            )
+                        }
+                        IconButton(
+                            modifier = Modifier.size(44.dp),
+                            onClick = {
+                                player.seekTo((player.currentPosition + skipMs)
+                                    .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
+                            }
+                        ) {
+                            if (skipSeconds == 10) Icon(Icons.Outlined.Forward10,
+                                "快进10秒", tint = Color.White)
+                            else Text("+" + skipSeconds + "s", color = Color.White)
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            (context as? Activity)?.requestedOrientation =
+                                if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        },
+                        modifier = Modifier.align(Alignment.CenterEnd).size(42.dp)
                     ) {
                         Icon(
-                            if (playWhenReady) Icons.Outlined.Pause
-                            else Icons.Outlined.PlayArrow,
-                            "播放或暂停"
+                            if (landscape) Icons.Outlined.FullscreenExit
+                            else Icons.Outlined.Fullscreen,
+                            "切换横竖屏", tint = Color.White
                         )
-                    }
-                    Spacer(Modifier.width(18.dp))
-                    IconButton(
-                        modifier = Modifier.size(46.dp),
-                        onClick = {
-                            player.seekTo((player.currentPosition + skipMs)
-                                .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
-                        }
-                    ) {
-                        if (skipSeconds == 10) Icon(Icons.Outlined.Forward10,
-                            "快进10秒", tint = Color.White)
-                        else Text("+" + skipSeconds + "s", color = Color.White)
-                    }
-                }
-                // Anchor source/quality to the start and view actions to
-                // the end. Conditional HD/PiP buttons no longer redistribute
-                // every icon when the available media options change.
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = onShowLinePicker,
-                            modifier = Modifier.size(42.dp)
-                        ) {
-                            Icon(Icons.Outlined.Tune, "切换播放线路", tint = Color.White)
-                        }
-                        if (qualityHeights.size > 1) {
-                            IconButton(
-                                onClick = { qualityPickerOpen = true },
-                                modifier = Modifier.size(42.dp)
-                            ) {
-                                Text("HD", color = Color.White,
-                                    style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = { expandedSettings = true },
-                            modifier = Modifier.size(42.dp)
-                        ) {
-                            Icon(Icons.Outlined.MoreVert, "播放设置", tint = Color.White)
-                        }
-                        if (prefs.getBoolean("manual_pip", true)) {
-                            IconButton(
-                                onClick = enterPip,
-                                modifier = Modifier.size(42.dp)
-                            ) {
-                                Icon(Icons.Outlined.PictureInPictureAlt, "画中画",
-                                    tint = Color.White)
-                            }
-                        }
-                        IconButton(
-                            onClick = {
-                                (context as? Activity)?.requestedOrientation =
-                                    if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                                    else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                            }, modifier = Modifier.size(42.dp)
-                        ) {
-                            Icon(if (landscape) Icons.Outlined.FullscreenExit
-                                else Icons.Outlined.Fullscreen,
-                                "切换横竖屏", tint = Color.White)
-                        }
                     }
                 }
                 if (currentError != null) {
