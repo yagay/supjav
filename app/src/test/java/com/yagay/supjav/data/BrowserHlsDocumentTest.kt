@@ -44,6 +44,27 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("SUPJAV_HLS_STATE:"))
     }
 
+    @Test fun compactGesturesUseTapDoubleTapHoldAndBlankAreaSeek() {
+        val html = requireNotNull(BrowserHlsDocument.render(PlaybackSource(
+            "https://cdn.example.com/hls2/master.m3u8?token=protected",
+            "application/x-mpegURL",
+            "https://evsishere.xyz/embed/a"
+        )))
+        assertTrue(html.contains("height:3px"))
+        assertTrue(html.contains("width:11px;height:11px"))
+        assertTrue(html.contains("pointerdown"))
+        assertTrue(html.contains("pointermove"))
+        assertTrue(html.contains("pointerup"))
+        assertTrue(html.contains("pointercancel"))
+        assertTrue(html.contains("video.playbackRate=2"))
+        assertTrue(html.contains("previousHoldRate"))
+        assertTrue(html.contains("g.y<g.height*.30 || g.y>g.height*.70"))
+        assertTrue(html.contains("singleTapTimer"))
+        assertTrue(html.contains("toggle();"))
+        assertTrue(html.contains("skip(side==='left'?-10:10)"))
+        assertFalse(html.contains("lastTapTime=0"))
+    }
+
     @Test fun resumedVideoEmitsOnlyBoundedProgressMetadata() {
         val html = requireNotNull(BrowserHlsDocument.render(PlaybackSource(
             "https://cdn.example.com/hls2/master.m3u8?token=sensitive",
