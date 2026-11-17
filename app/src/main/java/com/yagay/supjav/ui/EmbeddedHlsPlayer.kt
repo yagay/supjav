@@ -38,9 +38,13 @@ internal fun EmbeddedHlsPlayer(
     source: PlaybackSource,
     session: WebPlaybackSession,
     onShowLinePicker: () -> Unit,
+    availableParts: List<String> = emptyList(),
+    activePart: String? = null,
+    onSelectPart: (String) -> Unit = {},
     onWebsitePlayer: () -> Unit
 ) {
     val context = LocalContext.current
+    val dispatchPart by rememberUpdatedState(onSelectPart)
     val app = context.applicationContext as? SupjavApp
     val activity = context as? Activity
     val systemControls = remember(activity) {
@@ -53,7 +57,7 @@ internal fun EmbeddedHlsPlayer(
         value = session.restorePosition()
     }
     val defaults = app?.preferences
-    val document = remember(source.url, source.referer, resume) {
+    val document = remember(source.url, source.referer, resume, availableParts, activePart) {
         resume?.let {
             BrowserHlsDocument.render(
                 source, it,
@@ -67,7 +71,9 @@ internal fun EmbeddedHlsPlayer(
                     defaults?.getFloat(PlaybackDefaults.HOLD, 2f) ?: 2f),
                 autoPlay = defaults?.getBoolean(PlaybackDefaults.AUTOPLAY, true) ?: true,
                 initialBrightness = systemControls?.brightness() ?: 0.5f,
-                initialVolume = systemControls?.volume() ?: 0.5f
+                initialVolume = systemControls?.volume() ?: 0.5f,
+                availableParts = availableParts,
+                activePart = activePart
             )
         }
     }
@@ -204,6 +210,13 @@ internal fun EmbeddedHlsPlayer(
                             code == "lines" -> {
                                 Diagnostics.log("EMBEDDED_HLS_LINE_PICKER")
                                 onShowLinePicker()
+                            }
+                            code.startsWith("part:") -> {
+                                val part = code.removePrefix("part:")
+                                if (part in availableParts && part != activePart) {
+                                    Diagnostics.log("EMBEDDED_HLS_CD_SWITCH part=" + part)
+                                    dispatchPart(part)
+                                }
                             }
                             code == "website" -> {
                                 Diagnostics.log("EMBEDDED_HLS_WEBSITE_SELECTED")
