@@ -267,20 +267,43 @@ internal object SupjavServerAdapters {
         return null
     }
 
-    /** Decode only the packer's literal dictionary, never execute untrusted JS. */
+    /**
+     * Dean Edwards packer uses base 2..62 names. Decode only its literal
+     * token dictionary; never execute remote JavaScript. Bounded input and
+     * replacement count keep provider content from hanging a parser thread.
+     */
     internal fun unpackPacker(script: String): String? {
         val regex = Regex(
-            """(?s)eval\(function\(p,a,c,k,e,d\)\{.*?\}\(\s*'([^']*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'([^']*)'\s*\.split\('\|'\)"""
+            """(?s)eval\(function\(p,a,c,k,e,d\)\{.*?\}\(\s*'((?:\\.|[^'])*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'((?:\\.|[^'])*)'\s*\.split\('\|'\)"""
         )
         val match = regex.find(script.take(200_000)) ?: return null
         val base = match.groupValues[2].toIntOrNull() ?: return null
         val count = match.groupValues[3].toIntOrNull() ?: return null
-        if (base !in 2..36 || count !in 1..3000) return null
+        if (base !in 2..62 || count !in 1..3000) return null
         val keys = match.groupValues[4].split('|')
-        return Regex("""\b[a-zA-Z0-9_]+\b""").replace(match.groupValues[1]) {
-            val idx = it.value.toIntOrNull(base)
-            if (idx != null && idx in 0 until count && idx < keys.size &&
-                keys[idx].isNotBlank()) keys[idx] else it.value
+        val payload = match.groupValues[1]
+            .replace("\\'", "'").replace("\\\\", "\\")
+        if (payload.length > 120_000) return null
+
+        fun tokenIndex(token: String): Int? {
+            var result = 0
+            for (ch in token) {
+                val digit = when (ch) {
+                    in '0'..'9' -> ch - '0'
+                    in 'a'..'z' -> ch - 'a' + 10
+                    in 'A'..'Z' -> ch - 'A' + 36
+                    else -> return null
+                }
+                if (digit >= base) return null
+                result = result * base + digit
+                if (result >= count) return null
+            }
+            return result
+        }
+        return Regex("""\b[a-zA-Z0-9_]+\b""").replace(payload) {
+            val idx = tokenIndex(it.value)
+            if (idx != null && idx < keys.size && keys[idx].isNotBlank())
+                keys[idx] else it.value
         }
     }
 
