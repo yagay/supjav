@@ -106,6 +106,7 @@ fun SearchPage(
     var text by remember { mutableStateOf(initialValue) }
     var kind by remember { mutableStateOf(initialKind) }
     var activeValue by remember { mutableStateOf(initialValue) }
+    var activeLabel by remember { mutableStateOf(initialValue) }
     var activeKind by remember { mutableStateOf(initialKind) }
     var recent by remember { mutableStateOf(emptyList<String>()) }
     var options by remember { mutableStateOf<List<SupjavSource.BrowseOption>>(emptyList()) }
@@ -120,6 +121,7 @@ fun SearchPage(
             kind = initialKind
             activeKind = initialKind
             activeValue = initialValue
+            activeLabel = initialValue
             text = initialValue
         }
         recent = withContext(Dispatchers.IO) { app.searchStore.recent() }
@@ -136,16 +138,19 @@ fun SearchPage(
         }
     }
 
-    fun submit(value: String, chosenKind: FeedKind = kind) {
+    fun submit(value: String, chosenKind: FeedKind = kind, label: String = value) {
         val term = value.trim()
         if (term.isBlank()) return
         kind = chosenKind
         activeKind = chosenKind
         activeValue = term
-        text = term
+        activeLabel = label
+        text = label
         refresh++
-        scope.launch(Dispatchers.IO) { app.searchStore.add(term) }
-        recent = (listOf(term) + recent.filterNot { it == term }).take(20)
+        if (chosenKind == FeedKind.SEARCH) {
+            scope.launch(Dispatchers.IO) { app.searchStore.add(term) }
+            recent = (listOf(term) + recent.filterNot { it == term }).take(20)
+        }
         focus.clearFocus()
     }
 
@@ -182,7 +187,7 @@ fun SearchPage(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("${activeKind.title}：${activeValue}",
+                Text("${activeKind.title}：${activeLabel}",
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelMedium)
                 TextButton(onClick = {
@@ -229,7 +234,7 @@ fun SearchPage(
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         row.forEach { option ->
                             AssistChip(
-                                onClick = { submit(option.value, option.kind) },
+                                onClick = { submit(option.path, option.kind, option.label) },
                                 label = { Text(option.label, maxLines = 1) },
                                 modifier = Modifier.weight(1f)
                             )
