@@ -424,6 +424,10 @@ fun PlayerScreen(
         }
     }
     BackHandler(enabled = landscape && !pip) {
+        // The first system Back in landscape returns to portrait but must
+        // still pause playback, just like leaving the player from portrait.
+        player.pause()
+        engine.savePosition()
         (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
 
