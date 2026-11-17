@@ -1,6 +1,7 @@
 package com.yagay.supjav.data
 
 import com.yagay.supjav.model.*
+import com.yagay.supjav.player.VideoParts
 import com.yagay.supjav.util.Diagnostics
 import java.io.IOException
 import java.net.URI
@@ -280,20 +281,23 @@ class SupjavSource {
      */
     fun parseServers(html: String, detailUrl: String): List<VideoServer> {
         val doc = Jsoup.parse(html, detailUrl)
+        // Open-source SUPJAV extractors also observe .btnst a[data-link],
+        // which the older app parser did not include.
         val entries = doc.select(
-            ".btn-server[data-link], #server-list [data-link], " +
-                ".server-list [data-link], .servers [data-link], " +
-                "[data-server][data-link]"
+            ".btn-server[data-link], .btnst a[data-link], .btns a[data-link], " +
+                "#server-list [data-link], .server-list [data-link], " +
+                ".servers [data-link], [data-server][data-link]"
         ).mapNotNull { el ->
             val link = el.attr("data-link").trim()
             if (link.isBlank() || link.length > 2048) return@mapNotNull null
             val label = el.text().trim().ifBlank {
                 el.attr("data-server").trim()
-            }.ifBlank { "线路" }
-            label.take(64) to link
+            }.ifBlank { "线路" }.take(64)
+            val part = inferServerPart(el)
+            Triple(label, link, part)
         }.distinctBy { it.second }
-        if (entries.isNotEmpty()) return entries.mapIndexed { index, pair ->
-            VideoServer(index.toString(), pair.first, pair.second, detailUrl)
+        if (entries.isNotEmpty()) return entries.mapIndexed { index, (label, link, part) ->
+            VideoServer(index.toString(), label, link, detailUrl, part = part)
         }
         return doc.select(
             "iframe#video[src], #player-wrap iframe[src], iframe#player[src]"
@@ -301,8 +305,44 @@ class SupjavSource {
             val link = el.absUrl("src")
             link.takeIf { it.startsWith("https://") }
         }.distinct().mapIndexed { index, link ->
-            VideoServer(index.toString(), "Player ${index + 1}", link, detailUrl)
+            VideoServer(index.toString(), "Player \${index + 1}", link, detailUrl)
         }
+    }
+
+    /**
+     * Infer CD only from the selected source's own metadata/label or an
+     * explicitly labelled neighboring part section. Never infer CD count from
+     * player mirrors, page title, or an unrelated navigation link.
+     */
+    private fun inferServerPart(el: org.jsoup.nodes.Element): String? {
+        val own = listOf(el.attr("data-part"), el.attr("data-cd"),
+            el.attr("data-disc"), el.attr("title"), el.text())
+        own.firstNotNullOfOrNull(VideoParts::normalize)?.let { return it }
+        val group = el.closest(
+            "[data-part], [data-cd], [data-disc], .cd-group, " +
+                ".part-group, .disc-group, .episode-group"
+        )
+        if (group != null) {
+            listOf(group.attr("data-part"), group.attr("data-cd"), group.attr("data-disc"))
+                .firstNotNullOfOrNull(VideoParts::normalize)?.let { return it }
+            group.children().firstOrNull { child ->
+                child.tagName() in setOf("h2", "h3", "h4", "h5", "legend") ||
+                    child.classNames().any { it in setOf("part-title", "cd-title", "episode-title") }
+            }?.text()?.takeIf { it.length <= 32 }?.let(VideoParts::normalize)
+                ?.let { return it }
+        }
+        // Common site markup: <h4>CD2</h4><div class=btnst>...</div>.
+        val parent = el.parent()
+        for (candidate in listOfNotNull(parent?.previousElementSibling(),
+                parent?.parent()?.previousElementSibling())) {
+            val label = candidate.text().trim()
+            if (label.length <= 20 && Regex(
+                    """(?i)^(?:cd|disc|part)[\s_-]*0?[1-9][0-9]?$"""
+                ).matches(label)) {
+                VideoParts.normalize(label)?.let { return it }
+            }
+        }
+        return null
     }
 
     data class BrowseOption(
