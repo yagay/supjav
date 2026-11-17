@@ -41,6 +41,7 @@ import androidx.media3.common.Tracks
 import com.yagay.supjav.player.VideoQualityPolicy
 import com.yagay.supjav.player.PlaybackDefaults
 import com.yagay.supjav.player.PlayerTapPolicy
+import com.yagay.supjav.player.VideoParts
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -207,13 +208,34 @@ fun DetailScreen(
 
         val d = detail
         if (d != null) {
+            val parts = VideoParts.available(d.servers)
+            if (parts.size > 1) {
+                SupjavSectionTitle("视频分段")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    items(parts) { part ->
+                        val candidate = VideoParts.forPart(
+                            d.servers, part,
+                            PlaybackDefaults.preferredServer(
+                                d.servers,
+                                app.preferences.getString(PlaybackDefaults.LINE, "auto")
+                            )
+                        )
+                        FilterChip(
+                            selected = false,
+                            onClick = { candidate?.let(::play) },
+                            enabled = candidate != null && resolving == null,
+                            label = { Text(part) }
+                        )
+                    }
+                }
+            }
             Row(
                 Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
                     onClick = {
                         PlaybackDefaults.preferredServer(
-                            d.servers,
+                            VideoParts.firstPartFirst(d.servers),
                             app.preferences.getString(PlaybackDefaults.LINE, "auto")
                         )?.let(::play)
                     },
@@ -277,7 +299,7 @@ fun DetailScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (d.actors.isNotEmpty()) {
-                SupjavSectionTitle("演员")
+                SupjavSectionTitle("Cast · 演员")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(d.actors) { actor ->
                         val target = d.taxonomy.firstOrNull {
@@ -288,6 +310,22 @@ fun DetailScreen(
                             onClick = { target?.let { onFilter(FeedKind.ACTOR, it) } },
                             enabled = target != null,
                             label = { Text(actor) }
+                        )
+                    }
+                }
+            }
+            if (d.makers.isNotEmpty()) {
+                SupjavSectionTitle("Maker · 制作商")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    items(d.makers) { maker ->
+                        val target = d.taxonomy.firstOrNull {
+                            it.kind == FeedKind.MAKER &&
+                                it.label.equals(maker, ignoreCase = true)
+                        }?.path
+                        AssistChip(
+                            onClick = { target?.let { onFilter(FeedKind.MAKER, it) } },
+                            enabled = target != null,
+                            label = { Text(maker) }
                         )
                     }
                 }
@@ -309,10 +347,10 @@ fun DetailScreen(
                 }
             }
             val groupLinks = d.taxonomy.filter {
-                it.kind == FeedKind.CATEGORY || it.kind == FeedKind.MAKER
+                it.kind == FeedKind.CATEGORY
             }.distinctBy { it.path }
             if (groupLinks.isNotEmpty()) {
-                SupjavSectionTitle("分类与制作商")
+                SupjavSectionTitle("分类")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(groupLinks, key = { it.path }) { link ->
                         AssistChip(onClick = { onFilter(link.kind, link.path) },
@@ -359,7 +397,10 @@ fun PlayerScreen(
     enterPip: () -> Unit,
     onBack: () -> Unit,
     onWebFallback: (() -> Unit)? = null,
-    onShowLinePicker: () -> Unit = {}
+    onShowLinePicker: () -> Unit = {},
+    onShowPartPicker: () -> Unit = {},
+    availableParts: List<String> = emptyList(),
+    activePart: String? = null
 ) {
     val engine = app.playerEngine
     val player = engine.player
@@ -780,6 +821,17 @@ fun PlayerScreen(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (availableParts.size > 1) {
+                    TextButton(
+                        onClick = onShowPartPicker,
+                        modifier = Modifier.height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp)
+                    ) {
+                        Text(activePart ?: availableParts.first(),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium)
+                    }
+                }
                 IconButton(
                     onClick = onShowLinePicker,
                     modifier = Modifier.size(40.dp)
