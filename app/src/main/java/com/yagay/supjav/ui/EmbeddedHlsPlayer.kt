@@ -39,6 +39,10 @@ internal fun EmbeddedHlsPlayer(
     session: WebPlaybackSession,
     onShowLinePicker: () -> Unit,
     onShowPlaylist: () -> Unit = {},
+    onPreviousVideo: () -> Unit = {},
+    onNextVideo: () -> Unit = {},
+    hasPreviousVideo: Boolean = false,
+    hasNextVideo: Boolean = false,
     availableParts: List<String> = emptyList(),
     activePart: String? = null,
     onSelectPart: (String) -> Unit = {},
@@ -46,6 +50,8 @@ internal fun EmbeddedHlsPlayer(
 ) {
     val context = LocalContext.current
     val dispatchPart by rememberUpdatedState(onSelectPart)
+    val dispatchPrevious by rememberUpdatedState(onPreviousVideo)
+    val dispatchNext by rememberUpdatedState(onNextVideo)
     val app = context.applicationContext as? SupjavApp
     val activity = context as? Activity
     val systemControls = remember(activity) {
@@ -58,7 +64,8 @@ internal fun EmbeddedHlsPlayer(
         value = session.restorePosition()
     }
     val defaults = app?.preferences
-    val document = remember(source.url, source.referer, resume, availableParts, activePart) {
+    val document = remember(source.url, source.referer, resume, availableParts,
+        activePart, hasPreviousVideo, hasNextVideo) {
         resume?.let {
             BrowserHlsDocument.render(
                 source, it,
@@ -74,7 +81,9 @@ internal fun EmbeddedHlsPlayer(
                 initialBrightness = systemControls?.brightness() ?: 0.5f,
                 initialVolume = systemControls?.volume() ?: 0.5f,
                 availableParts = availableParts,
-                activePart = activePart
+                activePart = activePart,
+                hasPreviousVideo = hasPreviousVideo,
+                hasNextVideo = hasNextVideo
             )
         }
     }
@@ -215,6 +224,14 @@ internal fun EmbeddedHlsPlayer(
                             code == "playlist" -> {
                                 Diagnostics.log("EMBEDDED_HLS_PLAYLIST_OPEN")
                                 onShowPlaylist()
+                            }
+                            code == "queue-previous" -> {
+                                Diagnostics.log("EMBEDDED_HLS_PLAYLIST_PREVIOUS")
+                                dispatchPrevious()
+                            }
+                            code == "queue-next" -> {
+                                Diagnostics.log("EMBEDDED_HLS_PLAYLIST_NEXT")
+                                dispatchNext()
                             }
                             code.startsWith("part:") -> {
                                 val part = code.removePrefix("part:")
