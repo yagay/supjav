@@ -27,6 +27,7 @@ import com.yagay.supjav.SupjavApp
 import com.yagay.supjav.data.SupjavSource
 import com.yagay.supjav.model.FeedKind
 import com.yagay.supjav.model.VideoItem
+import com.yagay.supjav.util.Diagnostics
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -103,6 +104,7 @@ fun CategoryPage(
     // A covered category page must not consume Back ahead of the visible
     // detail/player overlay. Root owns Back while an overlay is on top.
     BackHandler(enabled = backEnabled && current != null && selectedPath.isNotEmpty()) {
+        Diagnostics.log("NAV_BACK_CATEGORY_TO_DIRECTORY")
         selectedKind = null
         selectedPath = ""
     }
