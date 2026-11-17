@@ -50,6 +50,8 @@ fun ScriptPlayerScreen(
     server: VideoServer,
     onNativePlay: (PlaybackSource) -> Unit,
     onEmbeddedHlsChanged: (Boolean) -> Unit = {},
+    onShowLinePicker: () -> Unit = {},
+    autoEnterHls: Boolean = false,
     webPlayback: WebPlaybackSession
 ) {
     val context = LocalContext.current
@@ -63,6 +65,9 @@ fun ScriptPlayerScreen(
     var useEmbeddedHls by remember(server.id, server.link) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val reportEmbeddedMode by rememberUpdatedState(onEmbeddedHlsChanged)
+    LaunchedEffect(autoEnterHls, browserHlsSource?.url) {
+        if (autoEnterHls && browserHlsSource != null) useEmbeddedHls = true
+    }
 
     LaunchedEffect(useEmbeddedHls) {
         reportEmbeddedMode(useEmbeddedHls)
@@ -81,6 +86,7 @@ fun ScriptPlayerScreen(
         EmbeddedHlsPlayer(
             source = requireNotNull(browserHlsSource),
             session = webPlayback,
+            onShowLinePicker = onShowLinePicker,
             onWebsitePlayer = {
                 useEmbeddedHls = false
                 reload++

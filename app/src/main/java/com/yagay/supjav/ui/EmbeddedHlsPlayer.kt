@@ -34,6 +34,7 @@ import com.yagay.supjav.util.Diagnostics
 internal fun EmbeddedHlsPlayer(
     source: PlaybackSource,
     session: WebPlaybackSession,
+    onShowLinePicker: () -> Unit,
     onWebsitePlayer: () -> Unit
 ) {
     val context = LocalContext.current
@@ -151,6 +152,10 @@ internal fun EmbeddedHlsPlayer(
                         // The only messages emitted by our player document are
                         // predefined state/action codes; never log signed URLs.
                         when (code) {
+                            "lines" -> {
+                                Diagnostics.log("EMBEDDED_HLS_LINE_PICKER")
+                                onShowLinePicker()
+                            }
                             "website" -> {
                                 Diagnostics.log("EMBEDDED_HLS_WEBSITE_SELECTED")
                                 resetOrientation()

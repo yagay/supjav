@@ -88,6 +88,7 @@ internal object BrowserHlsDocument {
                          min="0" max="1000" value="0" step="1" disabled>
                   <div class="actions">
                     <button id="speed" class="pill" aria-label="调整播放速度">1.0×</button>
+                    <button id="lines" class="pill" aria-label="切换播放线路">⇄</button>
                     <span style="flex:1"></span>
                     <button id="rotateBottom" class="pill" aria-label="切换横屏">⛶ 全屏</button>
                   </div>
@@ -187,6 +188,9 @@ internal object BrowserHlsDocument {
               document.getElementById('back').addEventListener('click',function(){state('website');});
               document.getElementById('rotate').addEventListener('click',rotate);
               document.getElementById('rotateBottom').addEventListener('click',rotate);
+              document.getElementById('lines').addEventListener('click',function(){
+                state('lines');chromeVisible(true);
+              });
               speed.addEventListener('click',function(){
                 speedIndex=(speedIndex+1)%speedList.length;
                 video.playbackRate=speedList[speedIndex];

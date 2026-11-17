@@ -39,15 +39,15 @@ class WebPlaybackSession(private val library: LibraryStore) {
         private set
     private var hasProgress = false
 
-    fun begin(video: VideoItem) {
+    fun begin(video: VideoItem, startPositionMs: Long = 0L) {
         if (currentVideo?.id == video.id) return
         saveProgress()
         generation++
         currentVideo = video
         isPlaying = false
-        positionMs = 0
+        positionMs = startPositionMs.coerceIn(0L, 86_400_000L)
         durationMs = 0
-        hasProgress = false
+        hasProgress = positionMs > 0L
         lastSaveTime = 0
         Diagnostics.log("WEB_SESSION_BEGIN video=" + video.id)
     }

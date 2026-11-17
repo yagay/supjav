@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,6 +37,11 @@ import com.yagay.supjav.model.VideoServer
 import com.yagay.supjav.model.VideoItem
 import com.yagay.supjav.ui.*
 import com.yagay.supjav.util.Diagnostics
+import com.yagay.supjav.model.ResolveResult
+import com.yagay.supjav.data.SupjavLine
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var inPip by mutableStateOf(false)
@@ -130,6 +137,14 @@ private fun Root(
     var webServer by remember { mutableStateOf<VideoServer?>(null) }
     var embeddedHlsActive by remember { mutableStateOf(false) }
     var webFallback by remember { mutableStateOf<VideoServer?>(null) }
+    var availableServers by remember { mutableStateOf<List<VideoServer>>(emptyList()) }
+    var selectedServer by remember { mutableStateOf<VideoServer?>(null) }
+    var linePickerOpen by remember { mutableStateOf(false) }
+    var switchingLine by remember { mutableStateOf<String?>(null) }
+    var lineSwitchError by remember { mutableStateOf<String?>(null) }
+    var autoOpenWebHls by remember { mutableStateOf(false) }
+    var lineSwitchJob by remember { mutableStateOf<Job?>(null) }
+    val scope = rememberCoroutineScope()
     var showSettings by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var libraryRevision by remember { mutableIntStateOf(0) }
@@ -140,6 +155,14 @@ private fun Root(
 
     SideEffect { onPlayerVisibility(showPlayer) }
     val onOpen: (VideoItem) -> Unit = { video ->
+        lineSwitchJob?.cancel()
+        lineSwitchJob = null
+        switchingLine = null
+        linePickerOpen = false
+        lineSwitchError = null
+        availableServers = emptyList()
+        selectedServer = null
+        autoOpenWebHls = false
         app.webPlayback.close()
         routes.add(video)
         embeddedHlsActive = false
@@ -150,6 +173,7 @@ private fun Root(
     }
     val back: () -> Unit = {
         when {
+            linePickerOpen && switchingLine == null -> linePickerOpen = false
             showSettings -> showSettings = false
             webServer != null -> {
                 app.webPlayback.close()
@@ -166,7 +190,7 @@ private fun Root(
             tab != SupjavTab.RECOMMEND -> tab = SupjavTab.RECOMMEND
         }
     }
-    BackHandler(enabled = showSettings || webServer != null || showPlayer ||
+    BackHandler(enabled = linePickerOpen || showSettings || webServer != null || showPlayer ||
         routes.isNotEmpty() || tab != SupjavTab.RECOMMEND) { back() }
 
     if (inPip) {
@@ -242,8 +266,14 @@ private fun Root(
                         key(video.id) {
                             DetailScreen(
                                 app = app, video = video, onVideo = onOpen,
-                                onPlay = { showPlayer = true },
+                                onPlay = { server ->
+                                    selectedServer = server
+                                    showPlayer = true
+                                },
+                                onServersUpdated = { servers -> availableServers = servers },
                                 onWebPlay = { server ->
+                                    selectedServer = server
+                                    autoOpenWebHls = false
                                     // Keep the actual renderer authoritative.
                                     // Media3's old item must not remain in
                                     // system media controls during Web HLS.
@@ -275,6 +305,10 @@ private fun Root(
                 PlayerScreen(
                         app, false, onPip,
                         onBack = { back() },
+                        onShowLinePicker = {
+                            lineSwitchError = null
+                            linePickerOpen = true
+                        },
                         onWebFallback = webFallback?.let { candidate ->
                             {
                                 app.playerEngine.stop()
@@ -297,7 +331,17 @@ private fun Root(
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column {
-                    if (!embeddedHlsActive) SupjavHeader("网页兼容播放器", onBack = back)
+                    if (!embeddedHlsActive) SupjavHeader(
+                        "网页兼容播放器", onBack = back,
+                        actions = {
+                            IconButton(onClick = {
+                                lineSwitchError = null
+                                linePickerOpen = true
+                            }) {
+                                Icon(Icons.Outlined.Tune, "切换播放线路")
+                            }
+                        }
+                    )
                     webServer?.let { server ->
                         key(server.id, server.link, server.verifiedPlayerUrl) {
                             ScriptPlayerScreen(
@@ -316,10 +360,124 @@ private fun Root(
                                     }
                                 },
                                 onEmbeddedHlsChanged = { embeddedHlsActive = it },
+                                onShowLinePicker = {
+                                    lineSwitchError = null
+                                    linePickerOpen = true
+                                },
+                                autoEnterHls = autoOpenWebHls,
                                 webPlayback = app.webPlayback
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // One line picker for Media3, the website player and HLS.js.
+        // Keep the current playback running until the replacement is ready.
+        if (linePickerOpen && activeVideo != null) {
+            SupjavModalSheet(
+                "切换播放线路",
+                onDismiss = { if (switchingLine == null) linePickerOpen = false }
+            ) {
+                if (availableServers.isEmpty()) {
+                    Text("当前作品还没有加载到播放线路，请返回详情刷新。")
+                } else {
+                    availableServers.forEach { candidate ->
+                        val active = selectedServer?.id == candidate.id &&
+                            selectedServer?.link == candidate.link
+                        FilledTonalButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = switchingLine == null && !active,
+                            onClick = {
+                                val video = activeVideo ?: return@FilledTonalButton
+                                switchingLine = candidate.id
+                                lineSwitchError = null
+                                Diagnostics.log("PLAYER_LINE_SWITCH_BEGIN video=" +
+                                    video.id + " line=" + candidate.name)
+                                lineSwitchJob?.cancel()
+                                lineSwitchJob = scope.launch {
+                                    try {
+                                        when (val resolved = app.resolver.resolve(candidate)) {
+                                            is ResolveResult.Playable -> {
+                                                val webPosition = if (webServer != null)
+                                                    app.webPlayback.positionMs else 0L
+                                                app.webPlayback.close()
+                                                app.playerEngine.play(
+                                                    video, resolved.source,
+                                                    resume = webPosition <= 0L
+                                                )
+                                                if (webPosition > 0L)
+                                                    app.playerEngine.player.seekTo(webPosition)
+                                                selectedServer = candidate
+                                                webFallback = candidate
+                                                webServer = null
+                                                autoOpenWebHls = false
+                                                embeddedHlsActive = false
+                                                showPlayer = true
+                                                linePickerOpen = false
+                                                Diagnostics.log("PLAYER_LINE_SWITCH_NATIVE line=" +
+                                                    candidate.name)
+                                            }
+                                            is ResolveResult.Unavailable -> {
+                                                val resumeMs = if (webServer != null)
+                                                    app.webPlayback.positionMs
+                                                else app.playerEngine.player.currentPosition
+                                                    .coerceAtLeast(0L)
+                                                app.playerEngine.stop()
+                                                app.webPlayback.begin(video, resumeMs)
+                                                selectedServer = candidate
+                                                webFallback = candidate
+                                                autoOpenWebHls = SupjavLine.of(candidate.name) in
+                                                    setOf(SupjavLine.EVS, SupjavLine.LUC)
+                                                embeddedHlsActive = false
+                                                webServer = candidate.copy(
+                                                    verifiedPlayerUrl = resolved.verifiedPlayerUrl
+                                                )
+                                                showPlayer = false
+                                                linePickerOpen = false
+                                                Diagnostics.log("PLAYER_LINE_SWITCH_WEB line=" +
+                                                    candidate.name)
+                                            }
+                                            ResolveResult.VerificationRequired -> {
+                                                lineSwitchError =
+                                                    "此线路需要人工验证；当前视频继续播放。请在详情页选择网页验证。"
+                                                Diagnostics.log("PLAYER_LINE_SWITCH_VERIFICATION " +
+                                                    candidate.name)
+                                            }
+                                        }
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: Exception) {
+                                        lineSwitchError = "切换失败：" +
+                                            error.javaClass.simpleName + "，原线路继续播放"
+                                        Diagnostics.log("PLAYER_LINE_SWITCH_FAILED type=" +
+                                            error.javaClass.simpleName)
+                                    } finally {
+                                        switchingLine = null
+                                        lineSwitchJob = null
+                                    }
+                                }
+                            }
+                        ) {
+                            if (active) {
+                                Icon(Icons.Outlined.CheckCircle, null)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(candidate.name + if (active) " · 当前线路" else "")
+                            if (switchingLine == candidate.id) {
+                                Spacer(Modifier.width(8.dp))
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            }
+                        }
+                    }
+                }
+                if (lineSwitchError != null) {
+                    Text(lineSwitchError.orEmpty(), color = MaterialTheme.colorScheme.error)
+                }
+                if (switchingLine != null) {
+                    Text("正在解析所选线路，原视频会保持到解析完成。",
+                        style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
