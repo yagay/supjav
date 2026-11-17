@@ -151,6 +151,7 @@ internal object BrowserHlsDocument {
                 <div id="top">
                   <button class="top-button" id="back" aria-label="返回网站播放器">‹</button>
                   <span id="title">内置 HLS 播放器</span>
+                  <button class="top-button" id="playlist" aria-label="打开播放列表" style="font-size:20px">☷</button>
                   <button class="top-button" id="rotate" aria-label="横屏或竖屏">⛶</button>
                 </div>
                 <div id="center">
@@ -340,6 +341,9 @@ internal object BrowserHlsDocument {
               document.getElementById('rotateBottom').addEventListener('click',rotate);
               document.getElementById('lines').addEventListener('click',function(){
                 state('lines');chromeVisible(true);
+              });
+              document.getElementById('playlist').addEventListener('click',function(){
+                state('playlist');chromeVisible(true);
               });
               document.querySelectorAll('#cdRow button[data-part]').forEach(function(button){
                 button.addEventListener('click',function(){
