@@ -677,6 +677,9 @@ private fun Root(
                                     showPlayer = true
                                 },
                                 onServersUpdated = { servers -> availableServers = servers },
+                                onPlaylistCaptured = {
+                                    playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                },
                                 onWebPlay = { server ->
                                     selectedServer = server
                                     autoOpenWebHls = false
