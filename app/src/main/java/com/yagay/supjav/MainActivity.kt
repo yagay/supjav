@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
+import androidx.compose.material.icons.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
@@ -41,6 +42,7 @@ import com.yagay.supjav.model.ResolveResult
 import com.yagay.supjav.data.SupjavLine
 import com.yagay.supjav.player.PlaybackDefaults
 import com.yagay.supjav.player.VideoParts
+import com.yagay.supjav.player.PlaybackQueuePolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -187,6 +189,11 @@ private fun Root(
     var selectedServer by remember { mutableStateOf<VideoServer?>(null) }
     var linePickerOpen by remember { mutableStateOf(false) }
     var partPickerOpen by remember { mutableStateOf(false) }
+    var playlistOpen by remember { mutableStateOf(false) }
+    var playlistItems by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var playlistSwitching by remember { mutableStateOf<String?>(null) }
+    var playlistError by remember { mutableStateOf<String?>(null) }
+    var playlistJob by remember { mutableStateOf<Job?>(null) }
     var switchingLine by remember { mutableStateOf<String?>(null) }
     var lineSwitchError by remember { mutableStateOf<String?>(null) }
     var autoOpenWebHls by remember { mutableStateOf(false) }
@@ -249,11 +256,16 @@ private fun Root(
         linePickerOpen = false
         partPickerOpen = false
         lineSwitchError = null
+        playlistOpen = false
+        playlistSwitching = null
+        playlistJob?.cancel()
+        playlistJob = null
         availableServers = emptyList()
         selectedServer = null
         autoOpenWebHls = false
         app.webPlayback.close()
         routes.add(video)
+        playlistItems = PlaybackQueuePolicy.snapshot(playlistItems, video)
         Diagnostics.log("NAV_OPEN_DETAIL video=" + video.id +
             " depth=" + routes.size)
         embeddedHlsActive = false
@@ -282,6 +294,14 @@ private fun Root(
             linePickerOpen = false
         }
         when {
+            playlistOpen -> {
+                playlistJob?.cancel()
+                playlistJob = null
+                playlistSwitching = null
+                playlistOpen = false
+                playlistError = null
+                Diagnostics.log("NAV_BACK_CLOSE_PLAYLIST")
+            }
             partPickerOpen && activeVideo != null -> {
                 cancelPendingSourceSwitch()
                 partPickerOpen = false
@@ -336,6 +356,94 @@ private fun Root(
             else -> {
                 Diagnostics.log("NAV_BACK_FINISH_ACTIVITY")
                 (context as? ComponentActivity)?.finish()
+            }
+        }
+    }
+
+    // Keep the original video playing until the next item's source resolves.
+    // This is a video change, not a mirror/CD change, so it starts at 0.
+    fun playFromPlaylist(next: VideoItem) {
+        if (next.id == activeVideo?.id || playlistSwitching != null) return
+        playlistError = null
+        playlistSwitching = next.id
+        playlistJob?.cancel()
+        playlistJob = scope.launch {
+            try {
+                Diagnostics.log("PLAYLIST_SELECT_START video=" + next.id +
+                    " items=" + playlistItems.size)
+                val detail = app.catalog.detail(next)
+                val servers = PlaybackQueuePolicy.startingServers(
+                    detail.servers,
+                    app.preferences.getString(PlaybackDefaults.LINE, "auto")
+                )
+                var chosen: VideoServer? = null
+                var resolvedSource: com.yagay.supjav.model.PlaybackSource? = null
+                var webFallbackEntry: VideoServer? = null
+                for (candidate in servers.take(6)) {
+                    when (val result = app.resolver.resolve(candidate)) {
+                        is ResolveResult.Playable -> {
+                            chosen = candidate
+                            resolvedSource = result.source
+                            break
+                        }
+                        is ResolveResult.Unavailable -> {
+                            if (webFallbackEntry == null) webFallbackEntry =
+                                candidate.copy(verifiedPlayerUrl = result.verifiedPlayerUrl)
+                        }
+                        ResolveResult.VerificationRequired -> {
+                            if (webFallbackEntry == null) webFallbackEntry = candidate
+                        }
+                    }
+                }
+                val nativeSource = resolvedSource
+                val selected = chosen ?: webFallbackEntry
+                if (selected == null) {
+                    playlistError = "没有找到可播放的服务器，请在详情页选择播放线路。"
+                    Diagnostics.log("PLAYLIST_SELECT_NO_SOURCE video=" + next.id)
+                } else if (nativeSource != null) {
+                    app.webPlayback.close()
+                    app.playerEngine.play(detail.video, nativeSource, resume = false)
+                    if (routes.isEmpty()) routes.add(detail.video)
+                    else routes[routes.lastIndex] = detail.video
+                    availableServers = detail.servers
+                    selectedServer = selected
+                    webFallback = selected
+                    webServer = null
+                    autoOpenWebHls = false
+                    embeddedHlsActive = false
+                    showPlayer = true
+                    playlistOpen = false
+                    Diagnostics.log("PLAYLIST_SELECT_NATIVE video=" + next.id +
+                        " line=" + selected.name)
+                } else {
+                    // Some SUPJAV sources require a website/WebView renderer.
+                    // Keep this fallback in the same playlist transaction.
+                    app.playerEngine.stop()
+                    app.webPlayback.close()
+                    app.webPlayback.begin(detail.video)
+                    if (routes.isEmpty()) routes.add(detail.video)
+                    else routes[routes.lastIndex] = detail.video
+                    availableServers = detail.servers
+                    selectedServer = selected
+                    webFallback = selected
+                    webServer = selected
+                    autoOpenWebHls = SupjavLine.of(selected.name) in
+                        setOf(SupjavLine.EVS, SupjavLine.LUC)
+                    embeddedHlsActive = false
+                    showPlayer = false
+                    playlistOpen = false
+                    Diagnostics.log("PLAYLIST_SELECT_WEB video=" + next.id +
+                        " line=" + selected.name)
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                playlistError = "切换失败：" + error.javaClass.simpleName +
+                    "，原视频继续播放"
+                Diagnostics.log("PLAYLIST_SELECT_FAILED type=" + error.javaClass.simpleName)
+            } finally {
+                playlistSwitching = null
+                playlistJob = null
             }
         }
     }
@@ -487,7 +595,10 @@ private fun Root(
                     if (activeSearchValue.isNotBlank()) {
                         FeedScreen(
                             app, activeSearchKind, activeSearchValue, onOpen,
-                            refreshKey = searchRevision
+                            refreshKey = searchRevision,
+                            onPlaylistCaptured = {
+                                playlistItems = PlaybackQueuePolicy.snapshot(it)
+                            }
                         )
                     } else {
                         holder.SaveableStateProvider(tab.name) {
@@ -506,20 +617,32 @@ private fun Root(
                                         targetCategoryPath = path
                                         tab = SupjavTab.CATEGORY
                                     },
-                                    refreshKey = refreshKey
+                                    refreshKey = refreshKey,
+                                    onPlaylistCaptured = {
+                                        playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                    }
                                 )
                                 SupjavTab.CATEGORY -> CategoryPage(
                                     app = app, onVideo = onOpen,
                                     initialKind = targetCategoryKind,
                                     initialPath = targetCategoryPath,
                                     directoryFilter = searchInput,
-                                    onBackActionChanged = { categoryBackAction = it }
+                                    onBackActionChanged = { categoryBackAction = it },
+                                    onPlaylistCaptured = {
+                                        playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                    }
                                 )
-                                SupjavTab.RANK -> RankPage(app, onOpen)
+                                SupjavTab.RANK -> RankPage(app, onOpen,
+                                    onPlaylistCaptured = {
+                                        playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                    })
                                 SupjavTab.MINE -> MinePage(
                                     app, onOpen,
                                     onSettings = { showSettings = true },
-                                    revision = libraryRevision
+                                    revision = libraryRevision,
+                                    onPlaylistCaptured = {
+                                        playlistItems = PlaybackQueuePolicy.snapshot(it)
+                                    }
                                 )
                             }
                         }
@@ -596,6 +719,10 @@ private fun Root(
                             lineSwitchError = null
                             partPickerOpen = true
                         },
+                        onShowPlaylist = {
+                            playlistError = null
+                            playlistOpen = true
+                        },
                         onSelectPart = { part ->
                             VideoParts.forPart(availableServers, part, selectedServer)
                                 ?.let(::switchServer)
@@ -648,6 +775,12 @@ private fun Root(
                                 }
                             }
                             IconButton(onClick = {
+                                playlistError = null
+                                playlistOpen = true
+                            }) {
+                                Icon(Icons.Outlined.PlaylistPlay, "播放列表")
+                            }
+                            IconButton(onClick = {
                                 lineSwitchError = null
                                 linePickerOpen = true
                             }) {
@@ -677,6 +810,10 @@ private fun Root(
                                     lineSwitchError = null
                                     linePickerOpen = true
                                 },
+                                onShowPlaylist = {
+                                    playlistError = null
+                                    playlistOpen = true
+                                },
                                 availableParts = VideoParts.available(availableServers),
                                 activePart = selectedServer?.let(VideoParts::partOf),
                                 onSelectPart = { part ->
@@ -690,6 +827,23 @@ private fun Root(
                     }
                 }
             }
+        }
+
+        if (playlistOpen && activeVideo != null) {
+            PlayerPlaylistSheet(
+                videos = PlaybackQueuePolicy.snapshot(playlistItems, activeVideo),
+                activeVideoId = activeVideo.id,
+                switchingVideoId = playlistSwitching,
+                error = playlistError,
+                onSelect = ::playFromPlaylist,
+                onDismiss = {
+                    playlistJob?.cancel()
+                    playlistJob = null
+                    playlistSwitching = null
+                    playlistError = null
+                    playlistOpen = false
+                }
+            )
         }
 
         if (partPickerOpen && activeVideo != null) {
