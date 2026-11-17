@@ -78,6 +78,27 @@ class SelectedMediaSession(sitePage: String) {
         return true
     }
 
+    /**
+     * Frame redirects may replace the original iframe URL with a new player origin.
+     * Accept only a browser-verified document whose referrer is already in the
+     * user-selected chain and whose path is a known embedding route.
+     */
+    @Synchronized
+    fun admitDocument(documentUrl: String, documentReferer: String): Boolean {
+        val childOrigin = MediaSourceDetector.origin(documentUrl) ?: return false
+        val parentOrigin = MediaSourceDetector.origin(documentReferer) ?: return false
+        if (parentOrigin !in trustedOrigins) return false
+        if (childOrigin in trustedOrigins) return true
+        val path = runCatching { URI(documentUrl).path.orEmpty().lowercase(Locale.US) }
+            .getOrDefault("")
+        val allowed = Regex("^/(?:e|embed|player|v|supjav\\.php)(?:/|$)")
+            .containsMatchIn(path)
+        if (!allowed || Regex("advert|banner|popunder|preroll", RegexOption.IGNORE_CASE)
+                .containsMatchIn(documentUrl)) return false
+        trustedOrigins.add(childOrigin)
+        return true
+    }
+
     @Synchronized
     fun fromPageReport(
         reportedOrigin: String,
