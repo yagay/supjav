@@ -34,6 +34,7 @@ import com.yagay.supjav.model.FeedKind
 import com.yagay.supjav.model.VideoServer
 import com.yagay.supjav.model.VideoItem
 import com.yagay.supjav.ui.*
+import com.yagay.supjav.util.Diagnostics
 
 class MainActivity : ComponentActivity() {
     private var inPip by mutableStateOf(false)
@@ -126,6 +127,7 @@ private fun Root(
     val activeVideo = routes.lastOrNull()
     var showPlayer by remember { mutableStateOf(false) }
     var webServer by remember { mutableStateOf<VideoServer?>(null) }
+    var webFallback by remember { mutableStateOf<VideoServer?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var libraryRevision by remember { mutableIntStateOf(0) }
@@ -138,6 +140,7 @@ private fun Root(
     val onOpen: (VideoItem) -> Unit = { video ->
         routes.add(video)
         webServer = null
+        webFallback = null
         showPlayer = false
         showSettings = false
     }
@@ -234,6 +237,7 @@ private fun Root(
                                 onPlay = { showPlayer = true },
                                 onWebPlay = { server ->
                                     app.playerEngine.player.pause()
+                                    webFallback = server
                                     webServer = server
                                 },
                                 onFilter = { kind, value ->
@@ -266,7 +270,18 @@ private fun Root(
                             }
                         })
                     }
-                    PlayerScreen(app, false, onPip, onBack = { back() })
+                    PlayerScreen(
+                        app, false, onPip,
+                        onBack = { back() },
+                        onWebFallback = webFallback?.let { candidate ->
+                            {
+                                app.playerEngine.player.pause()
+                                showPlayer = false
+                                webServer = candidate
+                                Diagnostics.log("NATIVE_FAILED_RETURN_TO_WEB line=" + candidate.name)
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -282,7 +297,19 @@ private fun Root(
                 Column {
                     SupjavHeader("网页兼容播放器", onBack = back)
                     webServer?.let { server ->
-                        key(server.id, server.link) { ScriptPlayerScreen(server) }
+                        key(server.id, server.link) {
+                            ScriptPlayerScreen(server) { source ->
+                                val video = activeVideo
+                                if (video != null) {
+                                    Diagnostics.log("NATIVE_HANDOFF video=" + video.id +
+                                        " line=" + server.name + " type=" + source.mimeType)
+                                    webFallback = server
+                                    webServer = null
+                                    app.playerEngine.play(video, source, resume = false)
+                                    showPlayer = true
+                                }
+                            }
+                        }
                     }
                 }
             }

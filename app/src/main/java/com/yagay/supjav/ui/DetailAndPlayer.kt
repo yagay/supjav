@@ -326,7 +326,8 @@ fun PlayerScreen(
     app: SupjavApp,
     pip: Boolean,
     enterPip: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onWebFallback: (() -> Unit)? = null
 ) {
     val engine = app.playerEngine
     val player = engine.player
@@ -484,6 +485,11 @@ fun PlayerScreen(
                                 player.prepare()
                                 player.play()
                             }) { Text("重新尝试") }
+                            if (onWebFallback != null) {
+                                TextButton(onClick = onWebFallback) {
+                                    Text("返回网页兼容播放")
+                                }
+                            }
                             TextButton(onClick = {
                                 runCatching { Diagnostics.share(context) }
                                     .onFailure { currentError = "日志导出失败：" +

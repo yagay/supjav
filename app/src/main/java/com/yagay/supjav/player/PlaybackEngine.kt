@@ -132,7 +132,20 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
         retries = 0
         waitingForConnection = false
         savePosition()
-        val properties = mapOf("User-Agent" to SupjavSource.UA, "Referer" to source.referer)
+        val origin = runCatching {
+            val uri = java.net.URI(source.referer)
+            if (uri.scheme == "https" && uri.host != null)
+                "https://" + uri.host else null
+        }.getOrNull()
+        val properties = mutableMapOf(
+            "User-Agent" to SupjavSource.UA,
+            "Referer" to source.referer
+        )
+        if (origin != null) properties["Origin"] = origin
+        Diagnostics.log("PLAYER_SOURCE host=" + Uri.parse(source.url).host +
+            " refererHost=" + Uri.parse(source.referer).host +
+            " type=" + source.mimeType +
+            " originSet=" + (origin != null))
         val factory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(properties)
             .setConnectTimeoutMs(15000).setReadTimeoutMs(25000)
         val metadata = MediaMetadata.Builder().setTitle(video.title).apply {

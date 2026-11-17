@@ -198,7 +198,7 @@ fun ScriptPlayerScreen(
                                     function report() {
                                         var media = [];
                                         function add(u) {
-                                            if (u && /^https:\\/\\//i.test(u) &&
+                                            if (u && u.indexOf('https://') === 0 &&
                                                 media.indexOf(u) < 0) media.push(u);
                                         }
                                         try {
