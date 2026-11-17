@@ -75,7 +75,7 @@ class SelectedMediaSession(
                 verifiedOrigin != null && verifiedOrigin != siteOrigin &&
                 verifiedOrigin != MediaSourceDetector.origin(selectedWrapperUrl) &&
                 !Regex("(?i)advert|banner|tracker|popunder|preroll")
-                    .containsMatchIn(verifiedPlayerUrl)) {
+                    .containsMatchIn(verifiedPlayerUrl.orEmpty())) {
                 trustedOrigins.add(requireNotNull(
                     MediaSourceDetector.origin(selectedWrapperUrl)))
                 trustedOrigins.add(verifiedOrigin)
