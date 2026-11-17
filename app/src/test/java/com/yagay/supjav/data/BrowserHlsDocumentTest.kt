@@ -93,7 +93,7 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("onSurfaceTap();"))
         assertTrue(html.contains("id=\"pausedIndicator\""))
         assertTrue(html.contains("pausedIndicator.hidden = !video.paused"))
-        assertTrue(html.contains(".actions{display:grid"))
+        assertTrue(html.contains(".actions{display:flex"))
         assertFalse(html.contains("private=yes"))
     }
 
@@ -186,6 +186,23 @@ class BrowserHlsDocumentTest {
         val ordinary = requireNotNull(BrowserHlsDocument.render(source,
             availableParts = listOf("CD1")))
         assertFalse(ordinary.contains("id=\"cdRow\""))
+    }
+
+
+    @Test fun playlistButtonSitsImmediatelyBeforeBottomFullscreenControl() {
+        val source = PlaybackSource(
+            "https://cdn.example.com/hls2/master.m3u8",
+            "application/x-mpegURL",
+            "https://evsishere.xyz/embed/test"
+        )
+        val html = requireNotNull(BrowserHlsDocument.render(source))
+        val actionsStart = html.indexOf("<div class=\"actions\">")
+        val playlistIndex = html.indexOf("id=\"playlist\"")
+        val fullscreenIndex = html.indexOf("id=\"rotateBottom\"")
+        assertTrue(actionsStart >= 0)
+        assertTrue(playlistIndex > actionsStart)
+        assertTrue(fullscreenIndex > playlistIndex)
+        assertEquals(1, Regex("""id="playlist"""").findAll(html).count())
     }
 
     @Test fun rejectsMp4AndUnsafeHosts() {
