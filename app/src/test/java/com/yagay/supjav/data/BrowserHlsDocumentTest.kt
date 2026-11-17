@@ -65,6 +65,23 @@ class BrowserHlsDocumentTest {
         assertFalse(html.contains("lastTapTime=0"))
     }
 
+    @Test fun gesturesUseSmallNonBlockingFeedbackInsteadOfFullscreenToasts() {
+        val html = requireNotNull(BrowserHlsDocument.render(PlaybackSource(
+            "https://cdn.example.com/stream.m3u8?secret=not-for-log",
+            "application/x-mpegURL", "https://evsishere.xyz/embed/abc"
+        )))
+        assertTrue(html.contains("id=\"playFlash\""))
+        assertTrue(html.contains("id=\"gestureFeedback\""))
+        assertTrue(html.contains("pointer-events:none"))
+        assertTrue(html.contains("playbackFlash(willPlay)"))
+        assertTrue(html.contains("subtleFeedback((seconds>0"))
+        assertTrue(html.contains("subtleFeedback('2×',side,true)"))
+        assertTrue(html.contains("clearSubtleFeedback()"))
+        assertFalse(html.contains("message('2× 倍速播放"))
+        assertFalse(html.contains("message('已恢复"))
+        assertFalse(html.contains("secret=not-for-log"))
+    }
+
     @Test fun resumedVideoEmitsOnlyBoundedProgressMetadata() {
         val html = requireNotNull(BrowserHlsDocument.render(PlaybackSource(
             "https://cdn.example.com/hls2/master.m3u8?token=sensitive",
