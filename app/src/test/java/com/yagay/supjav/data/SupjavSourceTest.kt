@@ -54,6 +54,16 @@ class SupjavSourceTest {
         source.pageUrl(com.yagay.supjav.model.FeedKind.CATEGORY, "//evil.com/", 1)
     }
 
+    @Test fun externalVideoLinksCannotBecomeDetailRequests() {
+        val html = """
+            <div class="post"><a href="https://evil.example.com/555001.html">External</a></div>
+            <div class="post"><a href="/555002.html">Allowed</a></div>
+        """.trimIndent()
+        val items = source.parseList(html, "https://supjav.com/")
+        assertEquals(1, items.size)
+        assertEquals("555002", items.first().id)
+    }
+
     @Test fun rejectsLocalOrInsecureMediaTargets() {
         assertFalse(source.isPublicHttps("http://example.com/a.mp4"))
         assertFalse(source.isPublicHttps("https://localhost:1000/"))

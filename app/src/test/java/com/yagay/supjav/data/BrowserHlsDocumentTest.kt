@@ -42,6 +42,21 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("SUPJAV_HLS_STATE:"))
     }
 
+    @Test fun resumedVideoEmitsOnlyBoundedProgressMetadata() {
+        val html = requireNotNull(BrowserHlsDocument.render(PlaybackSource(
+            "https://cdn.example.com/hls2/master.m3u8?token=sensitive",
+            "application/x-mpegURL",
+            "https://evsishere.xyz/embed/abc"
+        ), resumePositionMs = 91_500L))
+        assertTrue(html.contains("var pendingResumeSeconds = 91;"))
+        assertTrue(html.contains("SUPJAV_HLS_PROGRESS:"))
+        assertTrue(html.contains("applyResume()"))
+        assertFalse(html.contains("token=sensitive"))
+        assertTrue(html.contains("networkRecoveries<2"))
+        assertTrue(html.contains("status!==403"))
+        assertTrue(html.contains("mediaRecoveries<1"))
+    }
+
     @Test fun rejectsMp4AndUnsafeHosts() {
         assertNull(BrowserHlsDocument.render(PlaybackSource(
             "https://media.example.com/a.mp4", "video/mp4",
