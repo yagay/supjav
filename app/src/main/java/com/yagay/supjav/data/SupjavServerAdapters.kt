@@ -167,10 +167,10 @@ internal object SupjavServerAdapters {
     /** Ignore Streamtape's decoy text; consider only the declared robotlink JS expression. */
     internal fun streamtapeDeclaredSource(html: String): String? {
         val match = Regex(
-            """(?is)getElementById\(\s*['"]robotlink['"]\s*\)\.innerHTML\s*=\s*['"]([^'"]*)['"]\s*\+\s*(?:['"]{2}\s*\+\s*)?\(\s*['"]([^'"]*)['"]\s*\)((?:\s*\.substring\(\s*\d+\s*\))+)"""
+            """(?is)(?:getElementById\(\s*['"]robotlink['"]\s*\)|querySelector\(\s*['"]#robotlink['"]\s*\))\.innerHTML\s*=\s*['"]([^'"]*)['"]\s*\+\s*(?:['"]{2}\s*\+\s*)?\(\s*['"]([^'"]*)['"]\s*\)((?:\s*\.(?:substring|substr|slice)\(\s*\d+\s*\))+)"""
         ).find(html) ?: return null
         var suffix = match.groupValues[2]
-        val operations = Regex("""\.substring\(\s*(\d+)\s*\)""")
+        val operations = Regex("""\.(?:substring|substr|slice)\(\s*(\d+)\s*\)""")
             .findAll(match.groupValues[3]).map { it.groupValues[1].toInt() }
         for (index in operations) suffix = suffix.drop(index.coerceAtMost(suffix.length))
         val candidate = (match.groupValues[1] + suffix).trim()
