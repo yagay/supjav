@@ -442,6 +442,11 @@ fun PlayerScreen(
                 )
             }
         }
+        // Video stays edge-to-edge, but buttons/seek bar must stay outside
+        // status bars, gesture/three-button navigation and landscape cutouts.
+        Box(
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
+        ) {
         if (!pip && (controlsVisible || currentError != null)) {
             IconButton(
                 onClick = { engine.savePosition(); onBack() },
@@ -547,6 +552,7 @@ fun PlayerScreen(
                     }
                 }
             }
+        }
         }
     }
     if (expandedSettings && !pip) {

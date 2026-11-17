@@ -264,7 +264,13 @@ private fun Root(
                 fadeOut(tween(100))
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column {
+                Column(
+                    Modifier.fillMaxSize().windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(
+                            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+                        )
+                    )
+                ) {
                     SupjavHeader("作品详情", onBack = back)
                     activeVideo?.let { video ->
                         key(video.id) {
@@ -336,7 +342,16 @@ private fun Root(
             exit = slideOutHorizontally(tween(250)) { it }
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column {
+                Column(
+                    Modifier.fillMaxSize().then(
+                        if (embeddedHlsActive) Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
+                        else Modifier.windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(
+                                WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+                            )
+                        )
+                    )
+                ) {
                     if (!embeddedHlsActive) SupjavHeader(
                         "网页兼容播放器", onBack = back,
                         actions = {
@@ -495,7 +510,13 @@ private fun Root(
             exit = slideOutHorizontally(tween(240)) { it }
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column {
+                Column(
+                    Modifier.fillMaxSize().windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(
+                            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+                        )
+                    )
+                ) {
                     SupjavHeader("设置", onBack = back)
                     SettingsScreen(app, dark, onDark)
                 }
