@@ -45,7 +45,7 @@ internal object BrowserHlsDocument {
             .time-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
             #progress{display:block;width:100%;height:22px;margin:0;appearance:none;-webkit-appearance:none;background:transparent;touch-action:none;cursor:pointer}
             #progress:disabled{opacity:.45}
-            #progress::-webkit-slider-runnable-track{height:3px;background:rgba(255,255,255,.40);border-radius:3px}
+            #progress::-webkit-slider-runnable-track{height:3px;background:linear-gradient(to right,#fff 0%,#fff var(--seek-progress,0%),rgba(255,255,255,.40) var(--seek-progress,0%),rgba(255,255,255,.40) 100%);border-radius:3px}
             #progress::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:11px;height:11px;margin-top:-4px;background:#fff;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.35)}
             #progress::-moz-range-track{height:3px;background:rgba(255,255,255,.40);border-radius:3px}
             #progress::-moz-range-thumb{width:11px;height:11px;border:0;background:#fff;border-radius:50%}
@@ -163,6 +163,10 @@ internal object BrowserHlsDocument {
                 play.textContent = video.paused ? '▶' : '❚❚';
                 spinner.classList.toggle('hide', !video.paused && video.readyState>=2);
               }
+              function paintProgress(){
+                progress.style.setProperty('--seek-progress',
+                  (Number(progress.value)/10).toFixed(1)+'%');
+              }
               function tick(){
                 var valid = isFinite(video.duration) && video.duration > 0;
                 progress.disabled = !valid;
@@ -171,6 +175,7 @@ internal object BrowserHlsDocument {
                   progress.value = valid ? Math.floor(video.currentTime/video.duration*1000) : 0;
                 }
                 duration.textContent = valid ? clock(video.duration) : '--:--';
+                paintProgress();
               }
               function toggle(){
                 if(video.paused){video.play().catch(function(){message('点击播放按钮重试');state('tap-play');});}
@@ -205,6 +210,7 @@ internal object BrowserHlsDocument {
                 if(progress.disabled)return;
                 scrubbing=true;
                 current.textContent=clock(video.duration*Number(progress.value)/1000);
+                paintProgress();
                 chromeVisible(true);
               });
               progress.addEventListener('change',function(){
@@ -292,6 +298,7 @@ internal object BrowserHlsDocument {
                       g.startPosition+(g.dx/Math.max(g.width,1))*video.duration));
                   current.textContent=clock(g.preview);
                   progress.value=Math.round(g.preview/video.duration*1000);
+                  paintProgress();
                   message((g.dx>=0?'快进至 ':'快退至 ')+clock(g.preview));
                   chromeVisible(true);
                 }
