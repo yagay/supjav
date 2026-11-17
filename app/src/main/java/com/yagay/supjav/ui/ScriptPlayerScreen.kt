@@ -51,6 +51,9 @@ fun ScriptPlayerScreen(
     onNativePlay: (PlaybackSource) -> Unit,
     onEmbeddedHlsChanged: (Boolean) -> Unit = {},
     onShowLinePicker: () -> Unit = {},
+    availableParts: List<String> = emptyList(),
+    activePart: String? = null,
+    onSelectPart: (String) -> Unit = {},
     autoEnterHls: Boolean = false,
     webPlayback: WebPlaybackSession
 ) {
@@ -84,6 +87,9 @@ fun ScriptPlayerScreen(
             source = requireNotNull(browserHlsSource),
             session = webPlayback,
             onShowLinePicker = onShowLinePicker,
+            availableParts = availableParts,
+            activePart = activePart,
+            onSelectPart = onSelectPart,
             onWebsitePlayer = {
                 useEmbeddedHls = false
                 reload++
