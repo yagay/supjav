@@ -5,11 +5,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,12 +31,22 @@ fun PlayerPlaylistSheet(
     onSelect: (VideoItem) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val activeIndex = videos.indexOfFirst { it.id == activeVideoId }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = activeIndex.coerceAtLeast(0)
+    )
+    // Position the visible list on the playing video when the sheet opens.
+    // Also follow a genuine active-item change, without resetting on every recomposition.
+    LaunchedEffect(activeVideoId, videos) {
+        if (activeIndex >= 0) listState.scrollToItem(activeIndex)
+    }
     SupjavModalSheet("播放列表 · ${videos.size} 部", onDismiss = onDismiss) {
         if (videos.isEmpty()) {
             Text("当前页面没有可用的作品列表",
                 style = MaterialTheme.typography.bodyMedium)
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
                 contentPadding = PaddingValues(bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)
