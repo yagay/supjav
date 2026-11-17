@@ -61,8 +61,10 @@ class SupjavSource {
         require(isPublicHttps(url)) { "Only public HTTPS hosts are allowed" }
         val req = Request.Builder().url(url).header("User-Agent", UA)
             .header("Referer", referer).build()
+        Diagnostics.log("HTTP_REQUEST host=" + URI(url).host + " type=" +
+            if (url.contains(".html")) "detail" else "page-or-player")
         http.newCall(req).execute().use { response ->
-            Diagnostics.log("HTTP " + response.code + " " + URI(url).host)
+            Diagnostics.log("HTTP_RESULT status=" + response.code + " host=" + URI(url).host)
             if (!response.isSuccessful) throw IOException("HTTP " + response.code + " from " + URI(url).host)
             return response.body?.string()?.take(3_000_000) ?: throw IOException("Empty response")
         }
