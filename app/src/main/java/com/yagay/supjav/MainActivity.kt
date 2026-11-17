@@ -1,6 +1,7 @@
 package com.yagay.supjav
 
 import android.app.PictureInPictureParams
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Rational
@@ -8,16 +9,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
@@ -25,9 +24,10 @@ import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import com.yagay.supjav.model.FeedKind
@@ -37,39 +37,49 @@ import com.yagay.supjav.ui.*
 class MainActivity : ComponentActivity() {
     private var inPip by mutableStateOf(false)
     private var playerVisible by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as SupjavApp
         setContent {
-            var dark by remember { mutableStateOf(app.preferences.getBoolean("dark", true)) }
+            var dark by remember { mutableStateOf(app.preferences.getBoolean("dark", false)) }
             SupjavTheme(dark) {
-                Root(app, inPip, { visible -> playerVisible = visible }, ::requestPip,
-                    dark) { enabled ->
-                    dark = enabled
-                    app.preferences.edit().putBoolean("dark", enabled).apply()
-                }
+                Root(
+                    app = app, inPip = inPip,
+                    onPlayerVisibility = { playerVisible = it },
+                    onPip = ::requestPip, dark = dark,
+                    onDark = {
+                        dark = it
+                        app.preferences.edit().putBoolean("dark", it).apply()
+                    }
+                )
             }
         }
     }
+
     private fun requestPip() {
+        val app = application as SupjavApp
         if (android.os.Build.VERSION.SDK_INT >= 26 && !isFinishing &&
-            (application as SupjavApp).playerEngine.player.isPlaying) {
+            app.playerEngine.player.isPlaying) {
             runCatching {
                 enterPictureInPictureMode(PictureInPictureParams.Builder()
                     .setAspectRatio(Rational(16, 9)).build())
             }
         }
     }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val app = application as SupjavApp
         if (playerVisible && app.preferences.getBoolean("auto_pip", false) &&
             app.playerEngine.player.isPlaying) requestPip()
     }
+
     override fun onPictureInPictureModeChanged(mode: Boolean, config: Configuration) {
         super.onPictureInPictureModeChanged(mode, config)
         inPip = mode
     }
+
     override fun onStop() {
         super.onStop()
         val app = application as SupjavApp
@@ -89,128 +99,135 @@ private fun Root(
     dark: Boolean,
     onDark: (Boolean) -> Unit
 ) {
-    var ageConfirmed by remember { mutableStateOf(app.preferences.getBoolean("age_confirmed", false)) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    var ageConfirmed by remember {
+        mutableStateOf(app.preferences.getBoolean("age_confirmed", false))
+    }
     if (!ageConfirmed) {
         AlertDialog(
             onDismissRequest = {},
             title = { Text("年龄确认 / Age verification") },
-            text = { Text("仅供成年人使用。请确认你已年满18岁，并遵守当地法律和网站使用条款。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    app.preferences.edit().putBoolean("age_confirmed", true).apply()
-                    ageConfirmed = true
-                }) { Text("已满18岁") }
-            },
-            dismissButton = {
-                TextButton(onClick = { (context as? ComponentActivity)?.finish() }) { Text("退出") }
-            }
+            text = { Text("本应用仅供已满18岁的成年人使用，并须遵守当地法律和网站使用条款。") },
+            confirmButton = { TextButton(onClick = {
+                app.preferences.edit().putBoolean("age_confirmed", true).apply()
+                ageConfirmed = true
+            }) { Text("我已满18岁") } },
+            dismissButton = { TextButton(onClick = {
+                (context as? ComponentActivity)?.finish()
+            }) { Text("退出") } }
         )
         return
     }
 
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    var tab by rememberSaveable { mutableIntStateOf(0) }
-    var feedKind by remember { mutableStateOf(FeedKind.LATEST) }
-    var feedValue by remember { mutableStateOf("") }
-    var discoverKind by remember { mutableStateOf(FeedKind.SEARCH) }
-    var discoverValue by remember { mutableStateOf("") }
-    var refreshKey by remember { mutableIntStateOf(0) }
-    var selected by remember { mutableStateOf<VideoItem?>(app.playerEngine.currentVideo) }
-    var showDetail by remember { mutableStateOf(false) }
+    var tab by rememberSaveable { mutableStateOf(SupjavTab.RECOMMEND) }
+    val routes = remember { mutableStateListOf<VideoItem>() }
+    val activeVideo = routes.lastOrNull()
     var showPlayer by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var refreshKey by remember { mutableIntStateOf(0) }
+    var libraryRevision by remember { mutableIntStateOf(0) }
+    var targetSearchKind by remember { mutableStateOf(FeedKind.SEARCH) }
+    var targetSearchValue by remember { mutableStateOf("") }
 
     SideEffect { onPlayerVisibility(showPlayer) }
-
+    val onOpen: (VideoItem) -> Unit = { video ->
+        routes.add(video)
+        showPlayer = false
+        showSettings = false
+    }
     val back: () -> Unit = {
         when {
+            showSettings -> showSettings = false
             showPlayer -> {
                 app.playerEngine.savePosition()
-                (context as? ComponentActivity)?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                (context as? ComponentActivity)?.requestedOrientation =
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                 showPlayer = false
             }
-            showDetail -> showDetail = false
-            tab != 0 -> tab = 0
+            routes.isNotEmpty() -> { routes.removeAt(routes.lastIndex); libraryRevision++ }
+            tab != SupjavTab.RECOMMEND -> tab = SupjavTab.RECOMMEND
         }
     }
-    BackHandler(enabled = showPlayer || showDetail || tab != 0) { back() }
-
-    val onOpen: (VideoItem) -> Unit = {
-        selected = it
-        showDetail = true
-        showPlayer = false
-    }
+    BackHandler(enabled = showSettings || showPlayer ||
+        routes.isNotEmpty() || tab != SupjavTab.RECOMMEND) { back() }
 
     if (inPip) {
         PlayerScreen(app, true, onPip, { showPlayer = false })
         return
     }
 
+    val holder = rememberSaveableStateHolder()
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                SupjavHeader(
-                    title = listOf("Supjav", "发现", "我的")[tab],
-                    actions = {
-                        if (tab == 0) {
-                            IconButton(onClick = { tab = 1 }) {
+                if (tab != SupjavTab.SEARCH) {
+                    SupjavHeader(tab.title, actions = {
+                        if (tab == SupjavTab.RECOMMEND || tab == SupjavTab.NEW) {
+                            IconButton(onClick = { refreshKey++ }) {
+                                Icon(Icons.Outlined.Refresh, "刷新列表")
+                            }
+                        }
+                        if (tab == SupjavTab.RECOMMEND) {
+                            IconButton(onClick = { tab = SupjavTab.SEARCH }) {
                                 Icon(Icons.Outlined.Search, "搜索")
                             }
-                            IconButton(onClick = { refreshKey++ }) {
-                                Icon(Icons.Outlined.Refresh, "重新加载")
-                            }
                         }
-                    }
-                )
+                    })
+                }
             },
-            bottomBar = { SupjavPrimaryNavigation(tab) { tab = it } }
+            bottomBar = {
+                SupjavPrimaryNavigation(tab) { selected -> tab = selected }
+            }
         ) { padding ->
-            Column(Modifier.padding(padding).fillMaxSize()) {
-                when (tab) {
-                    0 -> Column(Modifier.fillMaxSize()) {
-                        Row(
-                            Modifier.horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf(FeedKind.LATEST, FeedKind.DAY, FeedKind.WEEK, FeedKind.MONTH).forEach { kind ->
-                                FilterChip(selected = feedKind == kind, onClick = {
-                                    feedKind = kind
-                                    feedValue = ""
-                                }, label = { Text(kind.title) })
-                            }
-                        }
-                        FeedScreen(app, feedKind, feedValue, onOpen, refreshKey)
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                holder.SaveableStateProvider(tab.name) {
+                    when (tab) {
+                        SupjavTab.RECOMMEND -> RecommendPage(
+                            app, onOpen,
+                            onSearch = { tab = SupjavTab.SEARCH },
+                            refreshKey = refreshKey
+                        )
+                        SupjavTab.RANK -> RankPage(app, onOpen)
+                        SupjavTab.NEW -> NewReleasesPage(app, onOpen, refreshKey)
+                        SupjavTab.MINE -> MinePage(
+                            app, onOpen,
+                            onSettings = { showSettings = true },
+                            revision = libraryRevision
+                        )
+                        SupjavTab.SEARCH -> SearchPage(
+                            app, onOpen, targetSearchKind, targetSearchValue
+                        )
                     }
-                    1 -> DiscoverScreen(app, onOpen, discoverKind, discoverValue)
-                    else -> MyHubScreen(app, dark, onDark, onOpen)
                 }
             }
         }
 
-        // The root destination remains mounted behind detail and player.
-        // Media3 stays service-owned; changing a tab never recreates a player instance.
         AnimatedVisibility(
-            visible = showDetail,
+            visible = routes.isNotEmpty(),
             modifier = Modifier.fillMaxSize().zIndex(1f),
-            enter = slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it } +
-                fadeIn(tween(160)),
-            exit = slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { it } +
-                fadeOut(tween(160))
+            enter = slideInHorizontally(tween(270, easing = FastOutSlowInEasing)) { it } +
+                fadeIn(tween(100)),
+            exit = slideOutHorizontally(tween(250, easing = FastOutSlowInEasing)) { it } +
+                fadeOut(tween(100))
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column {
-                    SupjavHeader("视频详情", onBack = back)
-                    selected?.let { video ->
-                        DetailScreen(app, video, onVideo = onOpen, onPlay = {
-                            showPlayer = true
-                        }, onFilter = { kind, value ->
-                            discoverKind = kind
-                            discoverValue = value
-                            tab = 1
-                            showDetail = false
-                        })
+                    SupjavHeader("作品详情", onBack = back)
+                    activeVideo?.let { video ->
+                        key(video.id) {
+                            DetailScreen(
+                                app = app, video = video, onVideo = onOpen,
+                                onPlay = { showPlayer = true },
+                                onFilter = { kind, value ->
+                                    routes.clear()
+                                    targetSearchKind = kind
+                                    targetSearchValue = value
+                                    tab = SupjavTab.SEARCH
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -219,8 +236,8 @@ private fun Root(
         AnimatedVisibility(
             visible = showPlayer,
             modifier = Modifier.fillMaxSize().zIndex(2f),
-            enter = slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it },
-            exit = slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { it }
+            enter = slideInHorizontally(tween(250)) { it },
+            exit = slideOutHorizontally(tween(250)) { it }
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column {
@@ -233,16 +250,28 @@ private fun Root(
                             }
                         })
                     }
-                    PlayerScreen(app, false, onPip, { showPlayer = false })
+                    PlayerScreen(app, false, onPip, onBack = { back() })
                 }
             }
         }
 
-        if (!showDetail && !showPlayer && app.playerEngine.currentVideo != null) {
-            // Discrete mini entry, like Hongguo's mini presentation:
-            // player continues underneath the navigation destinations.
-            Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 54.dp).zIndex(0.5f)) {
-                MiniPlayerBar(app, onClick = { showPlayer = true })
+        AnimatedVisibility(
+            visible = showSettings,
+            modifier = Modifier.fillMaxSize().zIndex(3f),
+            enter = slideInHorizontally(tween(260)) { it },
+            exit = slideOutHorizontally(tween(240)) { it }
+        ) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column {
+                    SupjavHeader("设置", onBack = back)
+                    SettingsScreen(app, dark, onDark)
+                }
+            }
+        }
+
+        if (!showSettings && !showPlayer && routes.isEmpty() && app.playerEngine.currentVideo != null) {
+            Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 86.dp).zIndex(0.5f)) {
+                MiniPlayerBar(app) { showPlayer = true }
             }
         }
     }
