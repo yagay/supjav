@@ -10,7 +10,14 @@ data class VideoItem(
     val actors: List<String> = emptyList()
 )
 
-data class VideoServer(val id: String, val name: String, val link: String, val detailUrl: String)
+data class VideoServer(
+    val id: String,
+    val name: String,
+    val link: String,
+    val detailUrl: String,
+    /** Only set from a successful selected-wrapper HTTP redirect. Never logged. */
+    val verifiedPlayerUrl: String? = null
+)
 
 data class BrowseLink(val kind: FeedKind, val label: String, val path: String)
 
@@ -35,6 +42,9 @@ data class PlaybackSource(val url: String, val mimeType: String, val referer: St
 
 sealed interface ResolveResult {
     data class Playable(val source: PlaybackSource) : ResolveResult
-    data class Unavailable(val reason: String) : ResolveResult
+    data class Unavailable(
+        val reason: String,
+        val verifiedPlayerUrl: String? = null
+    ) : ResolveResult
     data object VerificationRequired : ResolveResult
 }

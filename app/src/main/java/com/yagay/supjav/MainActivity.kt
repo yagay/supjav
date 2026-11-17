@@ -297,7 +297,7 @@ private fun Root(
                 Column {
                     SupjavHeader("网页兼容播放器", onBack = back)
                     webServer?.let { server ->
-                        key(server.id, server.link) {
+                        key(server.id, server.link, server.verifiedPlayerUrl) {
                             ScriptPlayerScreen(server) { source ->
                                 val video = activeVideo
                                 if (video != null) {

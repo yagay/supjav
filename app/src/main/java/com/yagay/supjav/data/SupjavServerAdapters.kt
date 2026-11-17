@@ -89,8 +89,14 @@ internal object SupjavServerAdapters {
             SupjavLine.ST -> streamtapeDeclaredSource(html)
             else -> null
         }
-        val scriptText = doc.select("script:not([src])")
-            .joinToString("\n") { it.data().ifBlank { it.html() } }.take(400_000)
+        val scripts = doc.select("script:not([src])")
+            .map { it.data().ifBlank { it.html() } }
+            .filter { it.isNotBlank() }.take(100)
+        val scriptText = scripts.joinToString("\n").take(400_000)
+        // A page may contain multiple independent packers. Only unpacking the
+        // first one silently misses later actual player configurations.
+        val unpackedScripts = scripts.mapNotNull { unpackPacker(it) }
+        val scriptsToScan = (scripts + unpackedScripts).take(140)
         if (declared != null) {
             // VOE and ST often include valid-looking advertisement/decoy URLs.
             // A recognized player configuration must not fall back to those.
@@ -100,7 +106,7 @@ internal object SupjavServerAdapters {
                 add(it.absUrl("src"))
             }
             if (line == SupjavLine.FST) fstDeclaredSource(html, documentUrl)?.let(::add)
-            for (text in listOf(scriptText, unpackPacker(scriptText).orEmpty())) {
+            for (text in scriptsToScan) {
                 for (match in explicitMedia.findAll(text)) {
                     val value = clean(match.groupValues[1])
                     if (value.startsWith("https://")) add(value)

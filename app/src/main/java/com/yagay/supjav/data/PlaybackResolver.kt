@@ -45,6 +45,7 @@ class PlaybackResolver(private val source: SupjavSource) {
         pending.add(start to server.detailUrl)
         var browserReason = "没有识别到有效媒体"
         var httpBlocked = false
+        var verifiedPlayerUrl: String? = null
         var pages = 0
         var probes = 0
         // Avoid keeping the user stuck on a native spinner when a provider
@@ -94,6 +95,19 @@ class PlaybackResolver(private val source: SupjavSource) {
                 Diagnostics.log("RESOLVE_PAGE line=" + line.name +
                     " status=" + page.status +
                     " host=" + URI(page.url).host + " bytes=" + page.body.length)
+                // The selected Supjav gateway itself redirected to this player.
+                // Preserve its identity for WebView; the browser's document.referrer
+                // can incorrectly show supjav.com instead of the intermediate gateway.
+                if (url == start && SitePlayerWrapper.isSiteWrapper(start) &&
+                    page.status in 200..299 &&
+                    MediaSourceDetector.origin(page.url) !=
+                        MediaSourceDetector.origin(start) &&
+                    MediaSourceDetector.origin(page.url) != null &&
+                    !Regex("(?i)advert|banner|tracker|popunder|preroll")
+                        .containsMatchIn(page.url)) {
+                    verifiedPlayerUrl = page.url
+                    Diagnostics.log("RESOLVE_SELECTED_PLAYER host=" + URI(page.url).host)
+                }
                 if (page.status in listOf(403, 429)) {
                     httpBlocked = true
                     browserReason = "访问受限 HTTP " + page.status
@@ -192,6 +206,7 @@ class PlaybackResolver(private val source: SupjavSource) {
         Diagnostics.log("RESOLVE_BROWSER_FALLBACK line=" + line.name +
             " pages=" + pages + " probes=" + probes +
             " restricted=" + httpBlocked)
-        ResolveResult.Unavailable("需要 JavaScript 或浏览器播放：" + detail)
+        ResolveResult.Unavailable("需要 JavaScript 或浏览器播放：" + detail,
+            verifiedPlayerUrl = verifiedPlayerUrl)
     }
 }

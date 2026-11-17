@@ -114,9 +114,10 @@ fun DetailScreen(
                         if (scripted && app.preferences.getBoolean("auto_web_fallback", true)) {
                             Diagnostics.log("PLAY_AUTO_WEB video=" + video.id +
                                 " line=" + server.name)
-                            onWebPlay(server)
+                            onWebPlay(server.copy(verifiedPlayerUrl = result.verifiedPlayerUrl))
                         } else {
-                            failedServer = server
+                            failedServer = server.copy(
+                                verifiedPlayerUrl = result.verifiedPlayerUrl)
                             playbackError = result.reason
                         }
                     }
@@ -247,16 +248,15 @@ fun DetailScreen(
                                 it.javaClass.simpleName }
                     }) { Text("导出这次失败的诊断 ZIP") }
                     failedServer?.let { failed ->
-                        if (!playbackError.orEmpty().contains("真人验证")) {
-                            OutlinedButton(onClick = {
-                                Diagnostics.log("PLAY_WEB_COMPAT_SELECTED video=" + video.id +
-                                    " line=" + failed.name)
-                                onWebPlay(failed)
-                            }) {
-                                Icon(Icons.Outlined.OpenInBrowser, null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("使用网页兼容模式播放此线路")
-                            }
+                        OutlinedButton(onClick = {
+                            Diagnostics.log("PLAY_WEB_COMPAT_SELECTED video=" + video.id +
+                                " line=" + failed.name)
+                            onWebPlay(failed)
+                        }) {
+                            Icon(Icons.Outlined.OpenInBrowser, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (playbackError.orEmpty().contains("真人验证"))
+                                "打开网页完成验证" else "使用网页兼容模式播放此线路")
                         }
                     }
                 }

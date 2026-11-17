@@ -56,13 +56,30 @@ object MediaSourceDetector {
  * No arbitrary frame may submit a media source: parent chain must originate
  * at Supjav, and each embedded player is admitted by an already trusted parent.
  */
-class SelectedMediaSession(sitePage: String) {
+class SelectedMediaSession(
+    sitePage: String,
+    selectedWrapperUrl: String? = null,
+    verifiedPlayerUrl: String? = null
+) {
     private val siteOrigin = MediaSourceDetector.origin(sitePage)
     private val trustedOrigins = mutableSetOf<String>()
 
     init {
         if (siteOrigin in setOf("https://supjav.com", "https://www.supjav.com")) {
             trustedOrigins.add(requireNotNull(siteOrigin))
+            // A different-origin document can use Supjav as its referrer even
+            // when it originated through the selected wrapper's HTTP redirect.
+            // Trust ONLY the verified redirect from THIS selected wrapper.
+            val verifiedOrigin = verifiedPlayerUrl?.let(MediaSourceDetector::origin)
+            if (selectedWrapperUrl != null && SitePlayerWrapper.isSiteWrapper(selectedWrapperUrl) &&
+                verifiedOrigin != null && verifiedOrigin != siteOrigin &&
+                verifiedOrigin != MediaSourceDetector.origin(selectedWrapperUrl) &&
+                !Regex("(?i)advert|banner|tracker|popunder|preroll")
+                    .containsMatchIn(verifiedPlayerUrl)) {
+                trustedOrigins.add(requireNotNull(
+                    MediaSourceDetector.origin(selectedWrapperUrl)))
+                trustedOrigins.add(verifiedOrigin)
+            }
         }
     }
 

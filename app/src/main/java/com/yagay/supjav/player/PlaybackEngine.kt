@@ -75,6 +75,8 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
                 }
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                Diagnostics.log("PLAYER_IS_PLAYING " + isPlaying +
+                    " positionMs=" + player.currentPosition)
                 if (isPlaying) {
                     retries = 0
                     waitingForConnection = false

@@ -106,14 +106,26 @@ fun ScriptPlayerScreen(
             )
         }
         key(server.link, reload) {
-            val session = remember(server.link, reload) { SelectedMediaSession(server.detailUrl) }
+            val session = remember(server.link, server.verifiedPlayerUrl, reload) {
+                SelectedMediaSession(
+                    server.detailUrl,
+                    SitePlayerWrapper.fromLegacyToken(server.link),
+                    server.verifiedPlayerUrl
+                )
+            }
             var webView: WebView? by remember { mutableStateOf(null) }
             val handler = remember { Handler(Looper.getMainLooper()) }
             val alive = remember { AtomicBoolean(true) }
             val selected = remember { AtomicBoolean(false) }
+            val lineSubmitted = remember { AtomicBoolean(false) }
             val reportedOrigins = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
             val reportedFrames = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
             val reportedMedia = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
+            if (server.verifiedPlayerUrl != null) {
+                // The entire signed URL stays in memory; logs contain only host.
+                Diagnostics.log("WEB_VERIFIED_PLAYER host=" +
+                    Uri.parse(server.verifiedPlayerUrl).host)
+            }
             fun offer(source: PlaybackSource, method: String) {
                 handler.post {
                     if (!alive.get() || !selected.get()) return@post
@@ -338,6 +350,9 @@ fun ScriptPlayerScreen(
                             override fun onPageFinished(view: WebView, url: String) {
                                 val host = Uri.parse(url).host.orEmpty()
                                 if (host != "supjav.com" && !host.endsWith(".supjav.com")) return
+                                // A repeated page-finished event must not reload the
+                                // same iframe and discard its player/media session.
+                                if (!lineSubmitted.compareAndSet(false, true)) return
                                 // Calling the site's original JumpChain is preferred.
                                 // If it does not return a wrapper, use only the documented
                                 // legacy hex-token iframe form; never a top-level GET.
@@ -408,7 +423,7 @@ fun ScriptPlayerScreen(
                                                 frame.allowFullscreen = true;
                                                 host.appendChild(frame);
                                             }
-                                            frame.src = wrapper;
+                                            if (frame.src !== wrapper) frame.src = wrapper;
                                             return JSON.stringify({
                                                 state:'FRAME_READY',
                                                 strategy:strategy,
@@ -439,6 +454,7 @@ fun ScriptPlayerScreen(
                                         " host=" + hostName + " jumpAvailable=" + jumpAvailable +
                                         " tokens=" + server.link.length)
                                     selected.set(state == "FRAME_READY" || state == "CLICK_FALLBACK")
+                                    if (!selected.get()) lineSubmitted.set(false)
                                     if (state == "FRAME_READY") {
                                         val wrapper = SitePlayerWrapper.fromLegacyToken(server.link)
                                         // Site JS may return a different valid wrapper; root
