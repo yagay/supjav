@@ -41,6 +41,60 @@ class VideoPartsTest {
             VideoParts.forPart(entries, "CD2", source("ST", "other"))?.id)
     }
 
+
+    @Test fun repeatedFiveProviderSetsBecomeTwoCds() {
+        // The diagnostic for SUPJAV 472992 reported ten server tokens,
+        // unlike ordinary pages that present five mirror lines.
+        val providers = listOf("EVS", "ST", "VOE", "LUC", "VAS")
+        val entries = (1..2).flatMap { cd ->
+            providers.map { line -> source(line, "cd" + cd + "-" + line) }
+        }
+        val grouped = VideoParts.groupRepeatedProviderSets(entries)
+        assertEquals(listOf("CD1", "CD2"), VideoParts.available(grouped))
+        assertEquals(listOf(5, 5),
+            VideoParts.available(grouped).map { part ->
+                grouped.count { VideoParts.partOf(it) == part }
+            })
+        assertEquals("cd2-LUC", VideoParts.forPart(grouped, "CD2", grouped[3])?.id)
+    }
+
+    @Test fun alternativeOrderInSecondProviderSetStillFormsCd2() {
+        val first = listOf("EVS", "ST", "VOE", "LUC", "VAS")
+        val second = listOf("VAS", "VOE", "ST", "EVS", "LUC")
+        val input = first.mapIndexed { index, line -> source(line, "one-" + index) } +
+            second.mapIndexed { index, line -> source(line, "two-" + index) }
+        assertEquals(listOf("CD1", "CD2"),
+            VideoParts.available(VideoParts.groupRepeatedProviderSets(input)))
+    }
+
+    @Test fun oneSetOfFiveMirrorsNeverBecomesFiveCds() {
+        val entries = listOf("EVS", "ST", "VOE", "LUC", "VAS")
+            .mapIndexed { i, line -> source(line, "server-" + i) }
+        assertEquals(entries, VideoParts.groupRepeatedProviderSets(entries))
+        assertTrue(VideoParts.available(entries).isEmpty())
+    }
+
+    @Test fun twoSetsWithDuplicateTokensOrDifferentProvidersAreNotCds() {
+        val providers = listOf("EVS", "ST", "VOE", "LUC", "VAS")
+        val entries = providers.map { source(it, "one-" + it) }
+        val repeatedSameLinks = entries + entries
+        assertEquals(repeatedSameLinks, VideoParts.groupRepeatedProviderSets(repeatedSameLinks))
+        val differentProviders = entries + listOf(
+            source("EVS", "2a"), source("ST", "2b"),
+            source("TV", "2c"), source("LUC", "2d"), source("VAS", "2e")
+        )
+        assertEquals(differentProviders,
+            VideoParts.groupRepeatedProviderSets(differentProviders))
+    }
+
+    @Test fun unknownProviderNamesDoNotProduceGuessedParts() {
+        val entries = (1..2).flatMap { cd ->
+            listOf("server alpha", "server beta", "server gamma")
+                .map { name -> source(name, cd.toString() + name) }
+        }
+        assertTrue(VideoParts.available(VideoParts.groupRepeatedProviderSets(entries)).isEmpty())
+    }
+
     @Test fun multipleMirrorsWithoutCdAreNotFakeParts() {
         val entries = listOf(source("EVS", "one"), source("LUC", "two"))
         assertTrue(VideoParts.available(entries).isEmpty())
