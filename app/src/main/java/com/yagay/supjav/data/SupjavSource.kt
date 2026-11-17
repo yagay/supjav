@@ -7,7 +7,13 @@ import java.net.URI
 import java.net.URLEncoder
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -234,8 +240,8 @@ class SupjavSource {
             else it.attr("data-original").ifBlank { it.attr("src") }
         }?.let { resolveUrl(video.detailUrl, it) }.orEmpty().ifBlank { video.coverUrl }
         val tags = doc.select("a[href*=/tag/]").map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
-        val actors = doc.select("a[href*=/category/cast/]").map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
-        val makers = doc.select("a[href*=/category/maker/]").map { it.text().trim() }
+        val actors = doc.select("a[href*=/category/cast/], a[href*=/cast/]").map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
+        val makers = doc.select("a[href*=/category/maker/], a[href*=/maker/]").map { it.text().trim() }
             .filter { it.isNotEmpty() }.distinct()
         val categories = doc.select("a[href*=/category/]")
             .filterNot { it.attr("href").contains("/category/cast/") ||
@@ -269,20 +275,96 @@ class SupjavSource {
         val path: String = value
     )
 
-    /** No fixed hardcoded category names: read only actual same-site links. */
-    suspend fun browseOptions(): List<BrowseOption> = withContext(Dispatchers.IO) {
-        parseBrowseOptions(fetch(BASE + "/"))
-    }
+    data class DirectoryScan(
+        val options: List<BrowseOption>,
+        val hasMore: Boolean,
+        val sourceCount: Int,
+        val failedSourceCount: Int
+    )
+
+    /**
+     * Collect directory links from the homepage and the site's own taxonomy
+     * indexes. A home menu only exposes a small featured subset, so it cannot
+     * stand in for the actor/maker/tag directories.
+     *
+     * The index URLs are discovery entry points, not fabricated category items.
+     * Each item is admitted only after observing an actual same-site anchor.
+     * Scan depth is expandable by the directory UI for large indexes.
+     */
+    suspend fun browseDirectory(maxPages: Int = 2): DirectoryScan =
+        withContext(Dispatchers.IO) {
+            require(maxPages in 1..50)
+            val roots = listOf(
+                "/", "/category/", "/tag/", "/cast/", "/maker/",
+                "/category/cast/", "/category/maker/"
+            )
+            data class SourceScan(
+                val items: List<BrowseOption>,
+                val more: Boolean,
+                val success: Boolean
+            )
+            val scans = coroutineScope {
+                val throttle = Semaphore(3)
+                roots.map { root ->
+                    async {
+                        throttle.withPermit {
+                            val found = LinkedHashMap<String, BrowseOption>()
+                            val visited = HashSet<String>()
+                            var cursor: String? = BASE + root
+                            var pages = 0
+                            var success = false
+                            while (cursor != null && pages < (if (root == "/") 1 else maxPages)) {
+                                val url = cursor
+                                if (!visited.add(url)) break
+                                try {
+                                    val html = fetch(url)
+                                    if (isAccessChallenge(html)) {
+                                        throw IOException("Access verification page")
+                                    }
+                                    success = true
+                                    parseBrowseOptions(html, url).forEach { found[it.path] = it }
+                                    pages++
+                                    val candidate = parseListingPage(html, url, pages).nextUrl
+                                    // Follow the index's pager only; never jump from
+                                    // the taxonomy index to an unrelated video feed.
+                                    cursor = candidate?.takeIf { next ->
+                                        val parent = root.trimEnd('/')
+                                        val nextPath = URI(next).path.trimEnd('/')
+                                        val query = URI(next).rawQuery.orEmpty()
+                                        nextPath.startsWith("$"+"parent/page/") ||
+                                            (nextPath == parent && Regex("(?i)(?:^|&)paged=\\d+").containsMatchIn(query))
+                                    }
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    Diagnostics.log("DIRECTORY_SOURCE_FAILED root=$"+"root page=$"+"pages reason=$"+"{e.javaClass.simpleName}")
+                                    cursor = null
+                                }
+                            }
+                            Diagnostics.log("DIRECTORY_SOURCE root=$"+"root count=$"+"{found.size} pages=$"+"pages more=$"+"{cursor != null}")
+                            SourceScan(found.values.toList(), cursor != null, success)
+                        }
+                    }
+                }.awaitAll()
+            }
+            if (scans.none { it.success }) {
+                throw IOException("网站目录页面均无法访问，已保留本地分类缓存")
+            }
+            val merged = scans.flatMap { it.items }.distinctBy { it.path }
+            Diagnostics.log("DIRECTORY_SYNC items=$"+"{merged.size} successes=$"+"{scans.count { it.success }} failures=$"+"{scans.count { !it.success }} more=$"+"{scans.any { it.more }}")
+            DirectoryScan(
+                merged, scans.any { it.more },
+                scans.count { it.success }, scans.count { !it.success }
+            )
+        }
+
+    suspend fun browseOptions(): List<BrowseOption> = browseDirectory().options
 
     fun parseBrowseOptions(html: String, base: String = BASE): List<BrowseOption> {
         val doc = Jsoup.parse(html, base)
-        val selector = listOf(
-            "nav a[href]", "header a[href]", ".menu a[href]", ".categories a[href]",
-            ".category-list a[href]", ".sidebar a[href]",
-            "a[href*='/category/']", "a[href*='/tag/']",
-            "a[href*='/maker/']", "a[href*='/cast/']"
-        ).joinToString(", ")
-        return doc.select(selector).mapNotNull { element ->
+        // Directory items may be in grids, list bodies or pagination pages,
+        // not necessarily inside nav/header/sidebars.
+        return doc.select("a[href]").mapNotNull { element ->
             val uri = runCatching { URI(element.absUrl("href")) }.getOrNull()
                 ?: return@mapNotNull null
             if (uri.scheme != "https" ||
@@ -316,7 +398,7 @@ class SupjavSource {
                 runCatching { URLDecoder.decode(slug, "UTF-8") }.getOrDefault(slug)
             }
             BrowseOption(type, slug, label, original)
-        }.distinctBy { it.path }.take(300)
+        }.distinctBy { it.path }
     }
 
     fun resolveUrl(base: String, raw: String): String = try {

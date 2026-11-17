@@ -266,7 +266,7 @@ private fun Root(
             topBar = {
                 SupjavHeader(tab.title, actions = {
                     if (activeSearchValue.isNotBlank() ||
-                        tab == SupjavTab.RECOMMEND || tab == SupjavTab.NEW) {
+                        tab == SupjavTab.RECOMMEND) {
                         IconButton(onClick = {
                             // A search owns its own feed revision: updating only
                             // the home revision previously did not refresh it.
@@ -339,7 +339,6 @@ private fun Root(
                                     directoryFilter = searchInput
                                 )
                                 SupjavTab.RANK -> RankPage(app, onOpen)
-                                SupjavTab.NEW -> NewReleasesPage(app, onOpen, refreshKey)
                                 SupjavTab.MINE -> MinePage(
                                     app, onOpen,
                                     onSettings = { showSettings = true },

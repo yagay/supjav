@@ -46,6 +46,9 @@ fun CategoryPage(
     var fetching by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var directoryPageDepth by remember { mutableIntStateOf(2) }
+    var directoryHasMore by remember { mutableStateOf(false) }
+    var directorySources by remember { mutableIntStateOf(0) }
     var chosenKind by rememberSaveable { mutableStateOf(FeedKind.CATEGORY) }
     var selectedKind by remember { mutableStateOf<FeedKind?>(null) }
     var selectedPath by rememberSaveable { mutableStateOf("") }
@@ -72,12 +75,17 @@ fun CategoryPage(
         fetching = true
         fetchError = null
         try {
-            val found = app.source.browseOptions()
-            if (found.isNotEmpty()) {
+            val result = app.source.browseDirectory(directoryPageDepth)
+            directoryHasMore = result.hasMore
+            directorySources = result.sourceCount
+            if (result.options.isNotEmpty()) {
                 directory = withContext(Dispatchers.IO) {
-                    app.categoryStore.save(found)
+                    app.categoryStore.save(result.options)
                     app.categoryStore.snapshot()
                 }
+            }
+            if (result.failedSourceCount > 0) {
+                fetchError = "部分目录来源暂时不可访问（${result.failedSourceCount} 个），已保留已有分类"
             }
         } catch (e: CancellationException) {
             throw e
@@ -174,12 +182,23 @@ fun CategoryPage(
         ) {
             SupjavSectionTitle(
                 chosenKind.title,
-                "共 ${results.size} 项 · 目录实时同步"
+                "共 ${results.size} 项 · 已同步 ${directorySources} 个目录来源"
             )
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { reload++ }) { Icon(Icons.Outlined.Refresh, "刷新分类") }
         }
         if (fetching) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (directoryHasMore && !fetching) {
+            TextButton(
+                onClick = {
+                    directoryPageDepth = (directoryPageDepth + 3).coerceAtMost(50)
+                    reload++
+                },
+                modifier = Modifier.padding(horizontal = 12.dp)
+            ) {
+                Text("继续加载更多目录（已扫描前 ${directoryPageDepth} 页）")
+            }
+        }
         if (fetchError != null) {
             Text(
                 "网站分类更新失败：" + fetchError.orEmpty() +

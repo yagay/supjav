@@ -156,6 +156,47 @@ class SupjavSourceTest {
         assertEquals("555002", items.first().id)
     }
 
+    @Test fun taxonomyDirectoryIncludesLinksOutsideNavigation() {
+        val html = """
+          <section class="results">
+            <a href="/cast/performer-a/">演员 A</a>
+            <a href="/maker/studio-b/">片商 B</a>
+            <a href="/tag/type-c/">标签 C</a>
+            <a href="/category/sample/">分类 D</a>
+          </section>
+        """.trimIndent()
+        val items = source.parseBrowseOptions(html)
+        assertEquals(4, items.size)
+        assertEquals(listOf("演员 A", "片商 B", "标签 C", "分类 D"),
+            items.map { it.label })
+    }
+
+    @Test fun taxonomyDirectoryDoesNotTruncateAfterThreeHundredItems() {
+        val html = buildString {
+            append("<main>")
+            for (i in 1..360) append("<a href='/tag/example-$"+"i/'>Tag $ "+"i</a>")
+            append("</main>")
+        }
+        val options = source.parseBrowseOptions(html)
+        assertEquals(360, options.size)
+        assertEquals("/tag/example-360", options.last().path)
+    }
+
+    @Test fun directoryRejectsCrossDomainAndPagerLinks() {
+        val html = """
+          <nav>
+            <a href="https://malicious.example/tag/bad/">Bad</a>
+            <a href="/tag/page/3/">Page 3</a>
+            <a href="/category/cast/actor-a/">Actor</a>
+            <a href="/category/maker/studio-a/">Maker</a>
+          </nav>
+        """.trimIndent()
+        val items = source.parseBrowseOptions(html)
+        assertEquals(2, items.size)
+        assertEquals(listOf(com.yagay.supjav.model.FeedKind.ACTOR,
+            com.yagay.supjav.model.FeedKind.MAKER), items.map { it.kind })
+    }
+
     @Test fun rejectsLocalOrInsecureMediaTargets() {
         assertFalse(source.isPublicHttps("http://example.com/a.mp4"))
         assertFalse(source.isPublicHttps("https://localhost:1000/"))

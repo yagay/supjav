@@ -41,12 +41,11 @@ object SupjavMetrics {
 }
 
 enum class SupjavTab(val title: String) {
-    RECOMMEND("推荐"), CATEGORY("分类"), RANK("排行"), NEW("最新"), MINE("我的");
+    RECOMMEND("首页"), CATEGORY("分类"), RANK("排行"), MINE("我的");
     fun icon(selected: Boolean): ImageVector = when (this) {
         RECOMMEND -> if (selected) Icons.Filled.Home else Icons.Outlined.Home
         CATEGORY -> if (selected) Icons.Filled.Category else Icons.Outlined.Category
         RANK -> if (selected) Icons.Filled.Leaderboard else Icons.Outlined.Leaderboard
-        NEW -> if (selected) Icons.Filled.CalendarMonth else Icons.Outlined.CalendarMonth
         MINE -> if (selected) Icons.Filled.Star else Icons.Outlined.StarOutline
     }
 }

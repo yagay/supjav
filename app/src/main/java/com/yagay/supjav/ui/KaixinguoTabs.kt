@@ -64,7 +64,7 @@ fun RecommendPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                SupjavSectionTitle("发现作品", "站点首页 · 下拉刷新")
+                SupjavSectionTitle("首页视频", "站点最新内容 · 下拉刷新或滚动加载更多")
             }
             TextButton(onClick = onSearch) {
                 Icon(Icons.Outlined.Tune, null, Modifier.size(18.dp))
@@ -116,16 +116,6 @@ fun RankPage(app: SupjavApp, onVideo: (VideoItem) -> Unit) {
 @Composable
 private fun rememberSaveableRank(): MutableIntState =
     androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
-
-@Composable
-fun NewReleasesPage(app: SupjavApp, onVideo: (VideoItem) -> Unit, refreshKey: Int = 0) {
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            SupjavSectionTitle("最新更新", "Supjav 网站最新发布的作品")
-        }
-        FeedScreen(app, FeedKind.LATEST, "", onVideo, refreshKey)
-    }
-}
 
 @Composable
 fun MinePage(
