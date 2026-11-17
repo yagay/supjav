@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -209,6 +210,7 @@ fun FeedScreen(
                     }) else null)
             }
         } else {
+            Box(Modifier.fillMaxSize()) {
             LazyVerticalGrid(
                 columns = columns,
                 state = grid,
@@ -239,6 +241,17 @@ fun FeedScreen(
                         }
                     }
                 }
+            }
+            if (grid.firstVisibleItemIndex >= 12) {
+                SmallFloatingActionButton(
+                    onClick = { scope.launch { grid.animateScrollToItem(0) } },
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                        .padding(end = 18.dp, bottom = 16.dp),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Icon(Icons.Outlined.KeyboardArrowUp, "回到顶部")
+                }
+            }
             }
         }
     }

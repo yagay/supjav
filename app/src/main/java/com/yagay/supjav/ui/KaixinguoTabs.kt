@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
@@ -52,9 +53,13 @@ fun RecommendPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                SupjavSectionTitle("发现作品", "来自 Supjav 网站首页，非账号个性化推荐")
+                SupjavSectionTitle("发现作品", "站点首页 · 下拉刷新")
             }
-            TextButton(onClick = onSearch) { Text("分类筛选") }
+            TextButton(onClick = onSearch) {
+                Icon(Icons.Outlined.Tune, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("分类")
+            }
         }
         FeedScreen(app, FeedKind.LATEST, "", onVideo, refreshKey)
     }
@@ -99,165 +104,6 @@ fun NewReleasesPage(app: SupjavApp, onVideo: (VideoItem) -> Unit, refreshKey: In
 }
 
 @Composable
-fun SearchPage(
-    app: SupjavApp,
-    onVideo: (VideoItem) -> Unit,
-    initialKind: FeedKind = FeedKind.SEARCH,
-    initialValue: String = ""
-) {
-    var text by remember { mutableStateOf(initialValue) }
-    var kind by remember { mutableStateOf(initialKind) }
-    var activeValue by remember { mutableStateOf(initialValue) }
-    var activeLabel by remember { mutableStateOf(initialValue) }
-    var activeKind by remember { mutableStateOf(initialKind) }
-    var recent by remember { mutableStateOf(emptyList<String>()) }
-    var options by remember { mutableStateOf(app.categoryStore.snapshot()) }
-    var optionsError by remember { mutableStateOf<String?>(null) }
-    var optionsLoading by remember { mutableStateOf(true) }
-    var refresh by remember { mutableIntStateOf(0) }
-    val focus = androidx.compose.ui.platform.LocalFocusManager.current
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(app, initialKind, initialValue) {
-        if (initialValue.isNotEmpty()) {
-            kind = initialKind
-            activeKind = initialKind
-            activeValue = initialValue
-            activeLabel = initialValue
-            text = initialValue
-        }
-        recent = withContext(Dispatchers.IO) { app.searchStore.recent() }
-    }
-    LaunchedEffect(app) {
-        try {
-            val observed = app.source.browseOptions()
-            options = withContext(Dispatchers.IO) {
-                app.categoryStore.save(observed)
-                app.categoryStore.snapshot()
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            optionsError = e.message?.take(100) ?: "网站分类暂时无法加载"
-        } finally {
-            optionsLoading = false
-        }
-    }
-
-    fun submit(value: String, chosenKind: FeedKind = kind, label: String = value) {
-        val term = value.trim()
-        if (term.isBlank()) return
-        kind = chosenKind
-        activeKind = chosenKind
-        activeValue = term
-        activeLabel = label
-        text = label
-        refresh++
-        if (chosenKind == FeedKind.SEARCH) {
-            scope.launch(Dispatchers.IO) { app.searchStore.add(term) }
-            recent = (listOf(term) + recent.filterNot { it == term }).take(20)
-        }
-        focus.clearFocus()
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = text, onValueChange = { text = it },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            shape = RoundedCornerShape(24.dp),
-            singleLine = true,
-            placeholder = { Text("搜索标题、番号、演员、标签") },
-            leadingIcon = { Icon(Icons.Outlined.Search, null) },
-            trailingIcon = {
-                TextButton(onClick = { submit(text) }) { Text("搜索") }
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { submit(text) })
-        )
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf(FeedKind.SEARCH, FeedKind.CATEGORY, FeedKind.TAG, FeedKind.ACTOR, FeedKind.MAKER)
-                .forEach { option ->
-                    FilterChip(selected = kind == option, onClick = {
-                        kind = option
-                        activeValue = ""
-                    }, label = { Text(option.title) })
-                }
-        }
-
-        if (activeValue.isNotBlank()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("${activeKind.title}：${activeLabel}",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelMedium)
-                TextButton(onClick = {
-                    activeValue = ""
-                    text = ""
-                }) { Text("清除") }
-            }
-            FeedScreen(app, activeKind, activeValue, onVideo, refresh)
-        } else {
-            val shown = options.filter { it.kind == kind || kind == FeedKind.SEARCH }
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                if (recent.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SupjavSectionTitle("最近搜索")
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = {
-                            scope.launch(Dispatchers.IO) { app.searchStore.clear() }
-                            recent = emptyList()
-                        }) { Icon(Icons.Outlined.DeleteOutline, "清空搜索历史") }
-                    }
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        recent.take(10).forEach { word ->
-                            AssistChip(onClick = { submit(word, FeedKind.SEARCH) },
-                                label = { Text(word) })
-                        }
-                    }
-                }
-                SupjavSectionTitle("浏览分类", "直接选取网站提供的标签、演员或分类")
-                if (optionsLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (optionsError != null) Text(optionsError.orEmpty(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (!optionsLoading && options.isEmpty()) {
-                    Text("网站未返回分类目录，也可以输入分类或关键词进行搜索。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                shown.chunked(3).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { option ->
-                            AssistChip(
-                                onClick = { submit(option.path, option.kind, option.label) },
-                                label = { Text(option.label, maxLines = 1) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
-                SupjavSectionTitle("搜索帮助")
-                Text("支持关键字、作品编号、标签、演员和制作商。实际分类取决于网站当前提供的数据。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
 fun MinePage(
     app: SupjavApp,
     onVideo: (VideoItem) -> Unit,
@@ -267,6 +113,7 @@ fun MinePage(
     var watched by remember { mutableStateOf(emptyList<VideoItem>()) }
     var saved by remember { mutableStateOf(emptyList<VideoItem>()) }
     var refresh by remember { mutableIntStateOf(0) }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(app, revision, refresh) {
         val lists = withContext(Dispatchers.IO) {
             app.library.list(false) to app.library.list(true)
@@ -274,18 +121,27 @@ fun MinePage(
         watched = lists.first
         saved = lists.second
     }
+    val selectedList = if (showHistory) watched else saved
     LazyVerticalGrid(
         columns = GridCells.Adaptive(SupjavMetrics.posterMinWidth),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(
+            start = SupjavMetrics.pageMargin,
+            end = SupjavMetrics.pageMargin, bottom = 28.dp
+        ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
-            Row(verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)) {
-                SupjavSectionTitle("我的", "最近观看和本地收藏")
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { refresh++ }) { Text("刷新") }
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    SupjavSectionTitle("本地片库", "管理收藏与最近播放")
+                }
+                IconButton(onClick = { refresh++ }) {
+                    Icon(androidx.compose.material.icons.outlined.Refresh, "刷新片库")
+                }
                 IconButton(onClick = {
                     runCatching { Diagnostics.share(app) }
                         .onFailure { Diagnostics.log("EXPORT_FAILED " + it.javaClass.simpleName) }
@@ -295,29 +151,34 @@ fun MinePage(
                 }
             }
         }
-        if (watched.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SupjavSectionTitle("最近观看")
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(watched.take(15), key = { it.id }) { video ->
-                            VideoTile(video, onClick = { onVideo(video) },
-                                modifier = Modifier.width(112.dp))
-                        }
-                    }
-                }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = !showHistory,
+                    onClick = { showHistory = false },
+                    label = { Text("收藏 ${saved.size}") }
+                )
+                FilterChip(
+                    selected = showHistory,
+                    onClick = { showHistory = true },
+                    label = { Text("最近播放 ${watched.size}") }
+                )
             }
         }
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            SupjavSectionTitle("收藏", "${saved.size} 部作品")
-        }
-        if (saved.isEmpty()) {
+        if (selectedList.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                SupjavEmptyState("还没有收藏。打开作品详情即可添加收藏。")
+                SupjavEmptyState(if (showHistory) {
+                    "还没有播放记录。播放过的作品会显示在这里。"
+                } else {
+                    "还没有收藏。打开作品详情即可加入收藏。"
+                })
             }
         } else {
-            gridItems(saved, key = { it.id }) { video ->
-                VideoTile(video, onClick = { onVideo(video) })
+            gridItems(selectedList, key = { it.id }) { video ->
+                VideoTile(video, onClick = { onVideo(video) }, app = app)
             }
         }
     }

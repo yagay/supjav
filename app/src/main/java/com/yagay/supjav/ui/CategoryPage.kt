@@ -156,13 +156,19 @@ fun CategoryPage(
                 }
             }
         }
+        val results = directory.filter {
+            it.kind == chosenKind &&
+                (directoryFilter.isBlank() ||
+                    it.label.contains(directoryFilter.trim(), ignoreCase = true) ||
+                    it.path.contains(directoryFilter.trim(), ignoreCase = true))
+        }
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             SupjavSectionTitle(
                 chosenKind.title,
-                "根据网站导航实时读取，按需显示"
+                "共 ${results.size} 项 · 目录实时同步"
             )
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { reload++ }) { Icon(Icons.Outlined.Refresh, "刷新分类") }
@@ -177,23 +183,19 @@ fun CategoryPage(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        val results = directory.filter {
-            it.kind == chosenKind &&
-                (directoryFilter.isBlank() ||
-                    it.label.contains(directoryFilter.trim(), ignoreCase = true) ||
-                    it.path.contains(directoryFilter.trim(), ignoreCase = true))
-        }
         if (!fetching && results.isEmpty()) {
             SupjavEmptyState(if (directory.isEmpty()) {
                 "网站尚未返回目录。当前可能存在访问限制。"
+            } else if (directoryFilter.isNotBlank()) {
+                "未找到匹配“${directoryFilter}”的目录；清除顶部搜索框可显示全部。"
             } else "这一类暂无可用目录项，可以切换其他分类。")
         }
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(148.dp),
+            columns = GridCells.Adaptive(142.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(results, key = { it.path }) { option ->
                 OutlinedCard(
