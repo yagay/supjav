@@ -38,7 +38,8 @@ fun CategoryPage(
     onVideo: (VideoItem) -> Unit,
     initialKind: FeedKind? = null,
     initialPath: String = "",
-    directoryFilter: String = ""
+    directoryFilter: String = "",
+    backEnabled: Boolean = true
 ) {
     var directory by remember { mutableStateOf(app.categoryStore.snapshot()) }
     var pinned by remember { mutableStateOf(app.categoryStore.pins().toSet()) }
@@ -99,7 +100,9 @@ fun CategoryPage(
         }
     }
     val current = selectedKind
-    BackHandler(enabled = current != null && selectedPath.isNotEmpty()) {
+    // A covered category page must not consume Back ahead of the visible
+    // detail/player overlay. Root owns Back while an overlay is on top.
+    BackHandler(enabled = backEnabled && current != null && selectedPath.isNotEmpty()) {
         selectedKind = null
         selectedPath = ""
     }
