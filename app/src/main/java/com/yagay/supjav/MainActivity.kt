@@ -40,6 +40,7 @@ import com.yagay.supjav.util.Diagnostics
 import com.yagay.supjav.model.ResolveResult
 import com.yagay.supjav.data.SupjavLine
 import com.yagay.supjav.player.PlaybackDefaults
+import com.yagay.supjav.player.VideoParts
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -185,6 +186,7 @@ private fun Root(
     var availableServers by remember { mutableStateOf<List<VideoServer>>(emptyList()) }
     var selectedServer by remember { mutableStateOf<VideoServer?>(null) }
     var linePickerOpen by remember { mutableStateOf(false) }
+    var partPickerOpen by remember { mutableStateOf(false) }
     var switchingLine by remember { mutableStateOf<String?>(null) }
     var lineSwitchError by remember { mutableStateOf<String?>(null) }
     var autoOpenWebHls by remember { mutableStateOf(false) }
@@ -238,6 +240,7 @@ private fun Root(
         lineSwitchJob = null
         switchingLine = null
         linePickerOpen = false
+        partPickerOpen = false
         lineSwitchError = null
         availableServers = emptyList()
         selectedServer = null
@@ -252,6 +255,9 @@ private fun Root(
     }
     val back: () -> Unit = {
         when {
+            partPickerOpen -> {
+                if (switchingLine == null) partPickerOpen = false
+            }
             linePickerOpen -> {
                 // Never navigate away from the active player while a switch
                 // transaction is still resolving.
@@ -282,7 +288,84 @@ private fun Root(
             }
         }
     }
-    BackHandler(enabled = linePickerOpen || showSettings || webServer != null || showPlayer ||
+
+    // The same switch transaction is used by playback-line and CD selectors.
+    // CD changes restart at 0; switching mirrors of the same CD keeps progress.
+    fun switchServer(candidate: VideoServer) {
+        val video = activeVideo ?: return
+        if (switchingLine != null) return
+        val currentPart = selectedServer?.let(VideoParts::partOf)
+        val nextPart = VideoParts.partOf(candidate)
+        val changingPart = nextPart != null && nextPart != currentPart
+        switchingLine = candidate.id
+        lineSwitchError = null
+        Diagnostics.log("PLAYER_SOURCE_SWITCH_BEGIN video=" + video.id +
+            " line=" + candidate.name + " part=" + (nextPart ?: "none"))
+        lineSwitchJob?.cancel()
+        lineSwitchJob = scope.launch {
+            try {
+                when (val resolved = app.resolver.resolve(candidate)) {
+                    is ResolveResult.Playable -> {
+                        val webPosition = if (webServer != null)
+                            app.webPlayback.positionMs else 0L
+                        app.webPlayback.close()
+                        app.playerEngine.play(
+                            video, resolved.source,
+                            resume = !changingPart && webPosition <= 0L
+                        )
+                        if (!changingPart && webPosition > 0L)
+                            app.playerEngine.player.seekTo(webPosition)
+                        selectedServer = candidate
+                        webFallback = candidate
+                        webServer = null
+                        autoOpenWebHls = false
+                        embeddedHlsActive = false
+                        showPlayer = true
+                        partPickerOpen = false
+                        linePickerOpen = false
+                        Diagnostics.log("PLAYER_SOURCE_SWITCH_NATIVE line=" + candidate.name)
+                    }
+                    is ResolveResult.Unavailable -> {
+                        val resumeMs = if (changingPart) 0L else if (webServer != null)
+                            app.webPlayback.positionMs
+                        else app.playerEngine.player.currentPosition.coerceAtLeast(0L)
+                        // Keep old player state intact until the destination resolves.
+                        app.playerEngine.player.pause()
+                        app.playerEngine.savePosition()
+                        app.webPlayback.switchLine(video, resumeMs)
+                        selectedServer = candidate
+                        webFallback = candidate
+                        autoOpenWebHls = SupjavLine.of(candidate.name) in
+                            setOf(SupjavLine.EVS, SupjavLine.LUC)
+                        embeddedHlsActive = false
+                        webServer = candidate.copy(
+                            verifiedPlayerUrl = resolved.verifiedPlayerUrl
+                        )
+                        showPlayer = false
+                        partPickerOpen = false
+                        linePickerOpen = false
+                        Diagnostics.log("PLAYER_SOURCE_SWITCH_WEB line=" + candidate.name)
+                    }
+                    ResolveResult.VerificationRequired -> {
+                        lineSwitchError =
+                            "此线路需要人工验证；当前视频保持不变，请使用其他播放线路。"
+                        Diagnostics.log("PLAYER_SOURCE_SWITCH_VERIFICATION " + candidate.name)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                lineSwitchError = "切换失败：" + error.javaClass.simpleName + "，原线路保持不变"
+                Diagnostics.log("PLAYER_SOURCE_SWITCH_FAILED type=" +
+                    error.javaClass.simpleName)
+            } finally {
+                switchingLine = null
+                lineSwitchJob = null
+            }
+        }
+    }
+
+    BackHandler(enabled = partPickerOpen || linePickerOpen || showSettings || webServer != null || showPlayer ||
         routes.isNotEmpty() || activeSearchValue.isNotBlank() ||
         tab != SupjavTab.RECOMMEND) { back() }
 
@@ -447,6 +530,12 @@ private fun Root(
                             lineSwitchError = null
                             linePickerOpen = true
                         },
+                        onShowPartPicker = {
+                            lineSwitchError = null
+                            partPickerOpen = true
+                        },
+                        availableParts = VideoParts.available(availableServers),
+                        activePart = selectedServer?.let(VideoParts::partOf),
                         onWebFallback = webFallback?.let { candidate ->
                             {
                                 val resumeMs = app.playerEngine.player.currentPosition
@@ -522,6 +611,40 @@ private fun Root(
             }
         }
 
+        if (partPickerOpen && activeVideo != null) {
+            SupjavModalSheet(
+                "选择视频分段",
+                onDismiss = { if (switchingLine == null) partPickerOpen = false }
+            ) {
+                val parts = VideoParts.available(availableServers)
+                if (parts.size < 2) {
+                    Text("当前作品未检测到多个可播放分段。")
+                } else {
+                    parts.forEach { part ->
+                        val source = VideoParts.forPart(availableServers, part, selectedServer)
+                        val selected = selectedServer?.let(VideoParts::partOf) == part
+                        FilledTonalButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = switchingLine == null && !selected && source != null,
+                            onClick = { source?.let(::switchServer) }
+                        ) {
+                            if (selected) {
+                                Icon(Icons.Outlined.CheckCircle, null)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(part + if (selected) " · 正在播放" else "")
+                            if (switchingLine == source?.id) {
+                                Spacer(Modifier.width(8.dp))
+                                CircularProgressIndicator(Modifier.size(18.dp),
+                                    strokeWidth = 2.dp)
+                            }
+                        }
+                    }
+                }
+                lineSwitchError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        }
+
         // One line picker for Media3, the website player and HLS.js.
         // Keep the current playback running until the replacement is ready.
         if (linePickerOpen && activeVideo != null) {
@@ -532,86 +655,18 @@ private fun Root(
                 if (availableServers.isEmpty()) {
                     Text("当前作品还没有加载到播放线路，请返回详情刷新。")
                 } else {
-                    availableServers.forEach { candidate ->
+                    val currentPart = selectedServer?.let(VideoParts::partOf)
+                    val parts = VideoParts.available(availableServers)
+                    val candidates = if (parts.size > 1 && currentPart != null)
+                        availableServers.filter { VideoParts.partOf(it) == currentPart }
+                    else availableServers
+                    candidates.forEach { candidate ->
                         val active = selectedServer?.id == candidate.id &&
                             selectedServer?.link == candidate.link
                         FilledTonalButton(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = switchingLine == null && !active,
-                            onClick = {
-                                val video = activeVideo ?: return@FilledTonalButton
-                                switchingLine = candidate.id
-                                lineSwitchError = null
-                                Diagnostics.log("PLAYER_LINE_SWITCH_BEGIN video=" +
-                                    video.id + " line=" + candidate.name)
-                                lineSwitchJob?.cancel()
-                                lineSwitchJob = scope.launch {
-                                    try {
-                                        when (val resolved = app.resolver.resolve(candidate)) {
-                                            is ResolveResult.Playable -> {
-                                                val webPosition = if (webServer != null)
-                                                    app.webPlayback.positionMs else 0L
-                                                app.webPlayback.close()
-                                                app.playerEngine.play(
-                                                    video, resolved.source,
-                                                    resume = webPosition <= 0L
-                                                )
-                                                if (webPosition > 0L)
-                                                    app.playerEngine.player.seekTo(webPosition)
-                                                selectedServer = candidate
-                                                webFallback = candidate
-                                                webServer = null
-                                                autoOpenWebHls = false
-                                                embeddedHlsActive = false
-                                                showPlayer = true
-                                                linePickerOpen = false
-                                                Diagnostics.log("PLAYER_LINE_SWITCH_NATIVE line=" +
-                                                    candidate.name)
-                                            }
-                                            is ResolveResult.Unavailable -> {
-                                                val resumeMs = if (webServer != null)
-                                                    app.webPlayback.positionMs
-                                                else app.playerEngine.player.currentPosition
-                                                    .coerceAtLeast(0L)
-                                                // Do not destroy the original playable
-                                                // native media before the replacement is ready.
-                                                // Keep it paused for a quick return.
-                                                app.playerEngine.player.pause()
-                                                app.playerEngine.savePosition()
-                                                app.webPlayback.switchLine(video, resumeMs)
-                                                selectedServer = candidate
-                                                webFallback = candidate
-                                                autoOpenWebHls = SupjavLine.of(candidate.name) in
-                                                    setOf(SupjavLine.EVS, SupjavLine.LUC)
-                                                embeddedHlsActive = false
-                                                webServer = candidate.copy(
-                                                    verifiedPlayerUrl = resolved.verifiedPlayerUrl
-                                                )
-                                                showPlayer = false
-                                                linePickerOpen = false
-                                                Diagnostics.log("PLAYER_LINE_SWITCH_WEB line=" +
-                                                    candidate.name)
-                                            }
-                                            ResolveResult.VerificationRequired -> {
-                                                lineSwitchError =
-                                                    "此线路需要人工验证；当前视频继续播放。请在详情页选择网页验证。"
-                                                Diagnostics.log("PLAYER_LINE_SWITCH_VERIFICATION " +
-                                                    candidate.name)
-                                            }
-                                        }
-                                    } catch (error: CancellationException) {
-                                        throw error
-                                    } catch (error: Exception) {
-                                        lineSwitchError = "切换失败：" +
-                                            error.javaClass.simpleName + "，原线路继续播放"
-                                        Diagnostics.log("PLAYER_LINE_SWITCH_FAILED type=" +
-                                            error.javaClass.simpleName)
-                                    } finally {
-                                        switchingLine = null
-                                        lineSwitchJob = null
-                                    }
-                                }
-                            }
+                            onClick = { switchServer(candidate) }
                         ) {
                             if (active) {
                                 Icon(Icons.Outlined.CheckCircle, null)
