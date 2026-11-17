@@ -23,7 +23,10 @@ internal data class MediaProbe(
     val playable: Boolean,
     val status: Int?,
     val finalUrl: String?,
-    val reason: String
+    val reason: String,
+    // Forward the working request profile into Media3 instead of probing
+    // without Origin and then incorrectly adding Origin during playback.
+    val includeOrigin: Boolean = true
 )
 
 internal interface MediaGateway {
@@ -73,7 +76,10 @@ internal class OkHttpMediaGateway : MediaGateway {
             a >= 224 || (a == 169 && b == 254) || (a == 192 && b == 0)
     }
 
-    private fun request(url: String, referer: String, range: Boolean = false): Request.Builder {
+    private fun request(
+        url: String, referer: String, range: Boolean = false,
+        includeOrigin: Boolean = true
+    ): Request.Builder {
         if (MediaSourceDetector.origin(url) == null ||
             MediaSourceDetector.origin(referer) == null) throw IOException("Unsafe HTTPS URL")
         val builder = Request.Builder().url(url)
@@ -82,7 +88,7 @@ internal class OkHttpMediaGateway : MediaGateway {
             .header("Referer", referer)
         if (range) builder.header("Range", "bytes=0-8191")
         val origin = MediaSourceDetector.origin(referer)
-        if (origin != null) builder.header("Origin", origin)
+        if (includeOrigin && origin != null) builder.header("Origin", origin)
         return builder
     }
 
@@ -104,14 +110,15 @@ internal class OkHttpMediaGateway : MediaGateway {
         method: String,
         json: String? = null,
         maxBytes: Int = 1_000_000,
-        range: Boolean = false
+        range: Boolean = false,
+        includeOrigin: Boolean = true
     ): Triple<GatewayPage, ByteArray, String> {
         var url = initial
         var referer = originalReferer
         val seen = HashSet<String>()
         repeat(6) { hop ->
             if (!seen.add(url)) throw IOException("Redirect loop")
-            val req = request(url, referer, range).apply {
+            val req = request(url, referer, range, includeOrigin).apply {
                 if (method == "POST" && hop == 0 && json != null) {
                     post(json.toRequestBody("application/json".toMediaType()))
                 } else get()
@@ -159,33 +166,56 @@ internal class OkHttpMediaGateway : MediaGateway {
     }
 
     override fun probe(url: String, referer: String, hls: Boolean): MediaProbe {
-        return try {
-            val (page, bytes, finalUrl) =
-                exchange(url, referer, "PROBE", maxBytes = 8192, range = true)
-            if (page.status !in listOf(200, 206)) {
-                MediaProbe(false, page.status, null, "http")
-            } else if (page.type.contains("text/html") ||
-                page.type.contains("application/json")) {
-                MediaProbe(false, page.status, null, "non-media-response")
-            } else if (bytes.isEmpty()) {
-                MediaProbe(false, page.status, null, "empty-response")
-            } else if (hls) {
-                val text = bytes.toString(Charsets.UTF_8).trimStart('\uFEFF', ' ', '\r', '\n')
-                MediaProbe(text.startsWith("#EXTM3U"), page.status,
-                    finalUrl.takeIf { text.startsWith("#EXTM3U") },
-                    if (text.startsWith("#EXTM3U")) "hls-ok" else "invalid-hls")
-            } else {
-                val mp4Magic = bytes.size >= 8 &&
-                    bytes.copyOfRange(4, 8).contentEquals("ftyp".toByteArray())
-                val looksVideo = page.type.startsWith("video/") ||
-                    page.type.contains("application/octet-stream") && mp4Magic || mp4Magic
-                MediaProbe(looksVideo, page.status,
-                    finalUrl.takeIf { looksVideo },
-                    if (looksVideo) "mp4-ok" else "invalid-mp4")
+        fun check(range: Boolean, includeOrigin: Boolean, profile: String): MediaProbe {
+            return try {
+                val (page, bytes, finalUrl) = exchange(
+                    url, referer, "PROBE", maxBytes = 8192,
+                    range = range, includeOrigin = includeOrigin
+                )
+                Diagnostics.log("MEDIA_PROBE_PROFILE host=" + URI(finalUrl).host +
+                    " profile=" + profile + " status=" + page.status)
+                val status = page.status
+                if (status !in listOf(200, 206)) {
+                    MediaProbe(false, status, null, "http", includeOrigin)
+                } else if (page.type.contains("text/html") ||
+                    page.type.contains("application/json")) {
+                    MediaProbe(false, status, null, "non-media-response", includeOrigin)
+                } else if (bytes.isEmpty()) {
+                    MediaProbe(false, status, null, "empty-response", includeOrigin)
+                } else if (hls) {
+                    val text = bytes.toString(Charsets.UTF_8)
+                        .trimStart('\uFEFF', ' ', '\r', '\n')
+                    val valid = text.startsWith("#EXTM3U")
+                    MediaProbe(valid, status, finalUrl.takeIf { valid },
+                        if (valid) "hls-ok" else "invalid-hls", includeOrigin)
+                } else {
+                    val mp4Magic = bytes.size >= 8 &&
+                        bytes.copyOfRange(4, 8).contentEquals("ftyp".toByteArray())
+                    val looksVideo = page.type.startsWith("video/") ||
+                        page.type.contains("application/octet-stream") && mp4Magic ||
+                        mp4Magic
+                    MediaProbe(looksVideo, status, finalUrl.takeIf { looksVideo },
+                        if (looksVideo) "mp4-ok" else "invalid-mp4", includeOrigin)
+                }
+            } catch (error: Exception) {
+                Diagnostics.log("MEDIA_PROBE_ERROR profile=" + profile +
+                    " type=" + error.javaClass.simpleName)
+                MediaProbe(false, null, null, error.javaClass.simpleName, includeOrigin)
             }
-        } catch (error: Exception) {
-            Diagnostics.log("MEDIA_PROBE_ERROR type=" + error.javaClass.simpleName)
-            MediaProbe(false, null, null, error.javaClass.simpleName)
         }
+
+        // Range can be rejected even when a manifest accepts a normal GET.
+        // Test alternative ordinary GET semantics only for HLS and 403/416;
+        // do not attempt automated CAPTCHA handling, challenge retries or
+        // aggressive header permutations.
+        val initial = check(range = true, includeOrigin = true, profile = "range-origin")
+        if (!hls || initial.playable || initial.status !in listOf(403, 416)) {
+            return initial
+        }
+        val noRange = check(range = false, includeOrigin = true, profile = "get-origin")
+        if (noRange.playable || noRange.status !in listOf(403, 416)) {
+            return noRange
+        }
+        return check(range = false, includeOrigin = false, profile = "get-referer")
     }
 }

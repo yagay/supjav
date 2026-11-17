@@ -76,7 +76,8 @@ class PlaybackResolver(private val source: SupjavSource) {
                         Diagnostics.log("RESOLVE_NATIVE_READY line=" + line.name +
                             " type=" + direct.mimeType)
                         return@withContext ResolveResult.Playable(
-                            direct.copy(url = check.finalUrl ?: direct.url))
+                            direct.copy(url = check.finalUrl ?: direct.url,
+                                includeOrigin = check.includeOrigin))
                     }
                     if (check.status in listOf(403, 429)) httpBlocked = true
                     browserReason = "媒体请求 " + (check.status?.toString() ?: check.reason)
@@ -127,7 +128,8 @@ class PlaybackResolver(private val source: SupjavSource) {
                     if (probe.playable) {
                         return@withContext ResolveResult.Playable(
                             PlaybackSource(probe.finalUrl ?: page.url,
-                                "application/x-mpegURL", referer))
+                                "application/x-mpegURL", referer,
+                                includeOrigin = probe.includeOrigin))
                     }
                     if (probe.status in listOf(403, 429)) httpBlocked = true
                     continue
@@ -187,7 +189,8 @@ class PlaybackResolver(private val source: SupjavSource) {
                             " type=" + candidate.mimeType +
                             " via=adapter")
                         return@withContext ResolveResult.Playable(
-                            candidate.copy(url = check.finalUrl ?: candidate.url))
+                            candidate.copy(url = check.finalUrl ?: candidate.url,
+                                includeOrigin = check.includeOrigin))
                     }
                     if (check.status in listOf(403, 429)) httpBlocked = true
                     browserReason = check.reason + " " + (check.status ?: "")

@@ -147,11 +147,11 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
             "User-Agent" to SupjavSource.UA,
             "Referer" to source.referer
         )
-        if (origin != null) properties["Origin"] = origin
+        if (source.includeOrigin && origin != null) properties["Origin"] = origin
         Diagnostics.log("PLAYER_SOURCE host=" + Uri.parse(source.url).host +
             " refererHost=" + Uri.parse(source.referer).host +
             " type=" + source.mimeType +
-            " originSet=" + (origin != null))
+            " originSet=" + (source.includeOrigin && origin != null))
         val factory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(properties)
             .setConnectTimeoutMs(15000).setReadTimeoutMs(25000)
         val metadata = MediaMetadata.Builder().setTitle(video.title).apply {

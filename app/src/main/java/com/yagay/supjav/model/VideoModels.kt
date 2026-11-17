@@ -38,7 +38,12 @@ enum class FeedKind(val title: String) {
     CATEGORY("分类"), TAG("标签"), ACTOR("演员"), MAKER("制作商"), SEARCH("搜索")
 }
 
-data class PlaybackSource(val url: String, val mimeType: String, val referer: String)
+data class PlaybackSource(
+    val url: String,
+    val mimeType: String,
+    val referer: String,
+    val includeOrigin: Boolean = true
+)
 
 sealed interface ResolveResult {
     data class Playable(val source: PlaybackSource) : ResolveResult

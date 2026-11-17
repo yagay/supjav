@@ -29,7 +29,8 @@ internal class NativeMediaCandidateVerifier(
         val probe = gateway.probe(source.url, source.referer, isHls)
         if (probe.playable && probe.finalUrl != null &&
             MediaSourceDetector.origin(probe.finalUrl) != null) {
-            Result.Ready(source.copy(url = probe.finalUrl))
+            Result.Ready(source.copy(url = probe.finalUrl,
+                includeOrigin = probe.includeOrigin))
         } else {
             Result.Rejected(probe.status, probe.reason)
         }
