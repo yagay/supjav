@@ -243,6 +243,7 @@ fun ScriptPlayerScreen(
             DisposableEffect(Unit) {
                 onDispose {
                     alive.set(false)
+                    webView?.let { webPlayback.detachProvider(it) }
                     webView?.stopLoading()
                     webView?.loadUrl("about:blank")
                     webView?.destroy()
@@ -254,6 +255,7 @@ fun ScriptPlayerScreen(
                 factory = { ctx ->
                     WebView(ctx).apply {
                         webView = this
+                        webPlayback.attachProvider(this)
                         setBackgroundColor(android.graphics.Color.BLACK)
                         settings.apply {
                             javaScriptEnabled = true

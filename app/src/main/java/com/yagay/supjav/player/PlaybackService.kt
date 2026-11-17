@@ -22,7 +22,8 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         val app = application as SupjavApp
         val pending = PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         session = MediaSession.Builder(this, app.playerEngine.player)
             .setSessionActivity(pending).build()

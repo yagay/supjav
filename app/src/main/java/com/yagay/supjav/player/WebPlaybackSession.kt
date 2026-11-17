@@ -34,6 +34,8 @@ class WebPlaybackSession(
 ) {
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var view: WeakReference<WebView>? = null
+    private var providerView: WeakReference<WebView>? = null
+    private var backgroundPaused = false
     private var generation: Long = 0
     private var lastSaveTime: Long = 0
     private var lastSystemUpdateMs = 0L
@@ -79,7 +81,8 @@ class WebPlaybackSession(
         positionMs = validPosition
         durationMs = duration
         val priorPlaying = isPlaying
-        isPlaying = playing
+        isPlaying = playing && !backgroundPaused
+        if (backgroundPaused && playing) pauseWebView()
         hasProgress = true
         // A 10-second gesture or system seek must refresh media controls
         // immediately; regular timeupdate events remain throttled.
@@ -98,6 +101,40 @@ class WebPlaybackSession(
 
     fun attach(player: WebView) {
         view = WeakReference(player)
+        if (backgroundPaused) pauseWebView()
+    }
+
+    /** The website player is not the embedded HLS element. Track it separately. */
+    fun attachProvider(player: WebView) {
+        providerView = WeakReference(player)
+        if (backgroundPaused) pauseProvider(player)
+    }
+
+    fun detachProvider(player: WebView) {
+        if (providerView?.get() === player) providerView = null
+    }
+
+    private fun pauseProvider(player: WebView) {
+        // Best effort for provider-controlled cross-origin frames: WebView's
+        // own onPause plus pausing accessible video/audio elements.
+        runCatching {
+            player.evaluateJavascript(
+                """(function(){
+                    window.__supjavBackgroundPaused=true;
+                    function pauseAll(doc) {
+                        if (!doc) return;
+                        doc.querySelectorAll('video,audio').forEach(function(media){
+                            try { media.pause(); } catch(e) {}
+                        });
+                        doc.querySelectorAll('iframe').forEach(function(frame){
+                            try { pauseAll(frame.contentDocument); } catch(e) {}
+                        });
+                    }
+                    pauseAll(document);
+                })()""".trimIndent(), null
+            )
+            player.onPause()
+        }.onFailure { Diagnostics.log("PROVIDER_BACKGROUND_PAUSE_FAILED " + it.javaClass.simpleName) }
     }
 
     fun detach(player: WebView) {
@@ -154,9 +191,11 @@ class WebPlaybackSession(
     }
 
     /** Called from the Android system media controls; never passes URLs. */
-    fun playFromSystem() = javascript(
-        "(function(){var v=document.getElementById('video');if(v)v.play().catch(function(){});})()"
-    )
+    fun playFromSystem() {
+        if (!backgroundPaused) javascript(
+            "(function(){var v=document.getElementById('video');if(v)v.play().catch(function(){});})()"
+        )
+    }
     fun pauseFromSystem() = javascript(
         "(function(){var v=document.getElementById('video');if(v)v.pause();})()"
     )
@@ -176,7 +215,28 @@ class WebPlaybackSession(
     private fun pauseWebView() = pauseFromSystem()
 
     fun pauseForBackground() {
-        if (isPlaying) pauseWebView()
+        backgroundPaused = true
+        pauseWebView()
+        providerView?.get()?.let(::pauseProvider)
+        if (isPlaying) {
+            isPlaying = false
+            publishSystemMedia(force = true)
+        }
+        saveProgress()
+    }
+
+    fun resumeAfterBackground() {
+        if (!backgroundPaused) return
+        backgroundPaused = false
+        providerView?.get()?.let { player ->
+            runCatching {
+                player.onResume()
+                player.evaluateJavascript(
+                    "window.__supjavBackgroundPaused=false;", null
+                )
+            }
+        }
+        // No auto-play, to match the native player lifecycle.
     }
 
     fun saveProgress() {
@@ -197,6 +257,7 @@ class WebPlaybackSession(
         positionMs = 0
         durationMs = 0
         view = null
+        providerView = null
         stopSystemMedia()
         Diagnostics.log("WEB_SESSION_END")
     }

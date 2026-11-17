@@ -88,7 +88,9 @@ fun LibraryScreen(
 @Composable
 fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
     val prefs = app.preferences
-    var background by remember { mutableStateOf(prefs.getBoolean("background", true)) }
+    var pauseOnBackground by remember {
+        mutableStateOf(prefs.getBoolean("pause_on_background", true))
+    }
     var autoPip by remember { mutableStateOf(prefs.getBoolean("auto_pip", false)) }
     var showPip by remember { mutableStateOf(prefs.getBoolean("manual_pip", true)) }
     var autoWebFallback by remember {
@@ -119,16 +121,26 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
                     prefs.edit().putBoolean("auto_web_fallback", it).apply()
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SupjavSettingToggle("后台播放",
-                    "切换应用或熄屏时继续播放支持的媒体", background) {
-                    background = it
-                    prefs.edit().putBoolean("background", it).apply()
+                SupjavSettingToggle("离开应用自动暂停",
+                    "切换应用、回桌面或锁屏时暂停视频；返回原播放页面后手动继续",
+                    pauseOnBackground) {
+                    pauseOnBackground = it
+                    prefs.edit().putBoolean("pause_on_background", it).apply()
+                    // Automatic PiP must not undermine a background pause.
+                    if (it) {
+                        autoPip = false
+                        prefs.edit().putBoolean("auto_pip", false).apply()
+                    }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 SupjavSettingToggle("离开 App 自动画中画",
-                    "仅在视频正在播放时尝试进入系统画中画", autoPip) {
-                    autoPip = it
-                    prefs.edit().putBoolean("auto_pip", it).apply()
+                    if (pauseOnBackground) "关闭自动暂停后才可使用，手动小窗不受影响"
+                    else "仅在视频正在播放时尝试进入系统画中画",
+                    autoPip && !pauseOnBackground) {
+                    if (!pauseOnBackground) {
+                        autoPip = it
+                        prefs.edit().putBoolean("auto_pip", it).apply()
+                    }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 SupjavSettingToggle("显示手动画中画入口",

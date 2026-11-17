@@ -48,6 +48,9 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     private var inPip by mutableStateOf(false)
     private var playerVisible by mutableStateOf(false)
+    // User-initiated picture-in-picture is the only background transition
+    // which is permitted to keep its own visible playback surface.
+    private var manualPipRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,33 +75,55 @@ class MainActivity : ComponentActivity() {
         val app = application as SupjavApp
         if (android.os.Build.VERSION.SDK_INT >= 26 && !isFinishing &&
             app.playerEngine.player.isPlaying) {
-            runCatching {
+            manualPipRequested = runCatching {
                 enterPictureInPictureMode(PictureInPictureParams.Builder()
                     .setAspectRatio(Rational(16, 9)).build())
-            }
+            }.getOrDefault(false)
         }
     }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val app = application as SupjavApp
-        if (playerVisible && app.preferences.getBoolean("auto_pip", false) &&
+        if (!app.preferences.getBoolean("pause_on_background", true) &&
+            playerVisible && app.preferences.getBoolean("auto_pip", false) &&
             app.playerEngine.player.isPlaying) requestPip()
     }
 
     override fun onPictureInPictureModeChanged(mode: Boolean, config: Configuration) {
         super.onPictureInPictureModeChanged(mode, config)
         inPip = mode
+        if (!mode) manualPipRequested = false
+    }
+
+    private fun pauseWhenLeavingApp() {
+        if (isInPictureInPictureMode || manualPipRequested) return
+        val app = application as SupjavApp
+        if (!app.preferences.getBoolean("pause_on_background", true)) return
+        // Pause, do not stop, clear the media or navigate away. Returning to
+        // the task resumes the same Compose page and paused player position.
+        app.playerEngine.player.pause()
+        app.playerEngine.savePosition()
+        app.webPlayback.pauseForBackground()
+        Diagnostics.log("APP_BACKGROUND_PAUSE native=true web=true")
+    }
+
+    override fun onPause() {
+        pauseWhenLeavingApp()
+        super.onPause()
     }
 
     override fun onStop() {
+        pauseWhenLeavingApp()
+        (application as SupjavApp).playerEngine.savePosition()
         super.onStop()
-        val app = application as SupjavApp
-        if (!app.preferences.getBoolean("background", true) && !isInPictureInPictureMode) {
-            app.playerEngine.player.pause()
-            app.webPlayback.pauseForBackground()
-        }
-        app.playerEngine.savePosition()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        manualPipRequested = false
+        // Restore WebView interaction, not playback. The user taps Play.
+        (application as SupjavApp).webPlayback.resumeAfterBackground()
     }
 }
 
