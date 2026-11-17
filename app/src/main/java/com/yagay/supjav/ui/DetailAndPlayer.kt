@@ -855,12 +855,6 @@ fun PlayerScreen(
                     }
                 }
                 IconButton(
-                    onClick = onShowPlaylist,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(Icons.Outlined.PlaylistPlay, "播放列表", tint = Color.White)
-                }
-                IconButton(
                     onClick = onShowLinePicker,
                     modifier = Modifier.size(40.dp)
                 ) {
@@ -984,64 +978,85 @@ fun PlayerScreen(
                         )
                     }
                 )
-                // All bottom controls share one row: the three transport
-                // buttons stay centered; fullscreen is anchored to the right.
-                // There is no second icon row below the transport buttons.
-                Box(Modifier.fillMaxWidth().height(48.dp)) {
+                // Keep transport centered whenever space permits. The
+                // playlist button sits immediately before fullscreen in the
+                // same bottom row instead of cluttering the top-right actions.
+                BoxWithConstraints(Modifier.fillMaxWidth().height(48.dp)) {
+                    val compact = maxWidth < 320.dp
                     Row(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(
-                            modifier = Modifier.size(44.dp),
-                            onClick = {
-                                player.seekTo((player.currentPosition - skipMs)
-                                    .coerceAtLeast(0L))
-                            }
-                        ) {
-                            if (skipSeconds == 10) Icon(Icons.Outlined.Replay10,
-                                "后退10秒", tint = Color.White)
-                            else Text("−" + skipSeconds + "s", color = Color.White)
+                        if (compact) {
+                            Spacer(Modifier.weight(1f))
+                        } else {
+                            Spacer(Modifier.weight(1f))
                         }
-                        FilledIconButton(
-                            modifier = Modifier.size(48.dp),
-                            onClick = {
-                                if (player.playWhenReady) player.pause() else player.play()
-                                controlsVisible = true
-                            }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                if (playWhenReady) Icons.Outlined.Pause
-                                else Icons.Outlined.PlayArrow,
-                                "播放或暂停"
-                            )
-                        }
-                        IconButton(
-                            modifier = Modifier.size(44.dp),
-                            onClick = {
-                                player.seekTo((player.currentPosition + skipMs)
-                                    .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
+                            IconButton(
+                                modifier = Modifier.size(if (compact) 38.dp else 44.dp),
+                                onClick = {
+                                    player.seekTo((player.currentPosition - skipMs)
+                                        .coerceAtLeast(0L))
+                                }
+                            ) {
+                                if (skipSeconds == 10) Icon(Icons.Outlined.Replay10,
+                                    "后退10秒", tint = Color.White)
+                                else Text("−" + skipSeconds + "s", color = Color.White)
                             }
-                        ) {
-                            if (skipSeconds == 10) Icon(Icons.Outlined.Forward10,
-                                "快进10秒", tint = Color.White)
-                            else Text("+" + skipSeconds + "s", color = Color.White)
+                            FilledIconButton(
+                                modifier = Modifier.size(if (compact) 44.dp else 48.dp),
+                                onClick = {
+                                    if (player.playWhenReady) player.pause() else player.play()
+                                    controlsVisible = true
+                                }
+                            ) {
+                                Icon(
+                                    if (playWhenReady) Icons.Outlined.Pause
+                                    else Icons.Outlined.PlayArrow,
+                                    "播放或暂停"
+                                )
+                            }
+                            IconButton(
+                                modifier = Modifier.size(if (compact) 38.dp else 44.dp),
+                                onClick = {
+                                    player.seekTo((player.currentPosition + skipMs)
+                                        .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
+                                }
+                            ) {
+                                if (skipSeconds == 10) Icon(Icons.Outlined.Forward10,
+                                    "快进10秒", tint = Color.White)
+                                else Text("+" + skipSeconds + "s", color = Color.White)
+                            }
                         }
-                    }
-                    IconButton(
-                        onClick = {
-                            (context as? Activity)?.requestedOrientation =
-                                if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                                else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                        },
-                        modifier = Modifier.align(Alignment.CenterEnd).size(42.dp)
-                    ) {
-                        Icon(
-                            if (landscape) Icons.Outlined.FullscreenExit
-                            else Icons.Outlined.Fullscreen,
-                            "切换横竖屏", tint = Color.White
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(0.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = onShowPlaylist,
+                                modifier = Modifier.size(if (compact) 36.dp else 40.dp)
+                            ) {
+                                Icon(Icons.Outlined.PlaylistPlay, "播放列表", tint = Color.White)
+                            }
+                            IconButton(
+                                onClick = {
+                                    (context as? Activity)?.requestedOrientation =
+                                        if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                        else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                                },
+                                modifier = Modifier.size(if (compact) 36.dp else 40.dp)
+                            ) {
+                                Icon(
+                                    if (landscape) Icons.Outlined.FullscreenExit
+                                    else Icons.Outlined.Fullscreen,
+                                    "切换横竖屏", tint = Color.White
+                                )
+                            }
+                        }
                     }
                 }
                 if (currentError != null) {
