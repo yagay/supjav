@@ -200,7 +200,7 @@ fun MinePage(
         } else {
             gridItems(selectedList, key = { it.id }) { video ->
                 VideoTile(video, onClick = {
-                    onPlaylistCaptured(selectedList.toList())
+                    onPlaylistCaptured(selectedList.toList(), null)
                     onVideo(video)
                 }, app = app)
             }
