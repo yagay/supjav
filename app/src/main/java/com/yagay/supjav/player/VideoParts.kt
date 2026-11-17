@@ -9,7 +9,7 @@ import com.yagay.supjav.model.VideoServer
  */
 object VideoParts {
     private val partPattern = Regex(
-        """(?i)(?<![a-z0-9])(?:cd|disc|part)[\\s_-]*0?([1-9][0-9]?)(?![0-9])"""
+        """(?i)(?<![a-z0-9])(?:cd|disc|part)[\s_-]*0?([1-9][0-9]?)(?![0-9])"""
     )
 
     fun normalize(label: String?): String? {
