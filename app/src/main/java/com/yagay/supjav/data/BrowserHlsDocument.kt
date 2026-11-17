@@ -20,7 +20,9 @@ internal object BrowserHlsDocument {
         holdSpeed: Float = 2f,
         autoPlay: Boolean = true,
         initialBrightness: Float = 0.5f,
-        initialVolume: Float = 0.5f
+        initialVolume: Float = 0.5f,
+        availableParts: List<String> = emptyList(),
+        activePart: String? = null
     ): String? {
         if (source.mimeType != "application/x-mpegURL" ||
             MediaSourceDetector.origin(source.url) == null ||
@@ -37,6 +39,22 @@ internal object BrowserHlsDocument {
             initialBrightness.coerceIn(0.01f, 1f) else 0.5f
         val volumeStart = if (initialVolume.isFinite())
             initialVolume.coerceIn(0f, 1f) else 0.5f
+        // Only render validated part labels; data-link/media URLs never enter
+        // the controls HTML or the bridge's event payload.
+        val parts = availableParts.distinct()
+            .filter { Regex("""^CD[1-9][0-9]?$""").matches(it) }.take(10)
+        val partMarkup = if (parts.size > 1) {
+            val buttons = parts.joinToString("") { part ->
+                val selected = part == activePart
+                "<button class=\"cd-button" +
+                    (if (selected) " selected" else "") +
+                    "\" data-part=\"" + part + "\"" +
+                    (if (selected) " disabled" else "") + ">" +
+                    part + "</button>"
+            }
+            "<div id=\"cdRow\" aria-label=\"选择视频分段\">" +
+                "<span>分段</span>" + buttons + "</div>"
+        } else ""
         return """
             <!doctype html>
             <html lang="zh"><head><meta charset="UTF-8">
@@ -82,6 +100,10 @@ internal object BrowserHlsDocument {
             .actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:center;gap:6px;margin-top:4px}
             .pill{height:37px;min-width:0;width:100%;padding:0 3px;border-radius:19px;background:rgba(255,255,255,.14);font-size:12px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
             #speed{font-variant-numeric:tabular-nums}
+            #cdRow{display:flex;align-items:center;gap:7px;overflow-x:auto;white-space:nowrap;padding:2px 0 6px;scrollbar-width:none}
+            #cdRow span{font-size:12px;color:rgba(255,255,255,.77);margin-right:2px}
+            #cdRow .cd-button{flex-shrink:0;min-height:30px;padding:0 12px;border-radius:9px;background:rgba(255,255,255,.15);font-size:12px;font-weight:600}
+            #cdRow .cd-button.selected{background:rgba(255,255,255,.35);color:#fff;opacity:1}
             @media(max-width:350px){.actions{grid-template-columns:repeat(4,minmax(0,1fr))}}
             [hidden]{display:none!important}
             #qualityMenu{position:absolute;right:12px;bottom:calc(73px + env(safe-area-inset-bottom));z-index:6;max-height:min(48vh,280px);overflow:auto;display:flex;flex-direction:column;gap:3px;min-width:116px;border-radius:12px;padding:6px;background:rgba(25,25,25,.96);box-shadow:0 4px 20px rgba(0,0,0,.4)}
@@ -137,6 +159,7 @@ internal object BrowserHlsDocument {
                   <button class="skip" id="forward10" aria-label="快进${playbackSkip}秒">$playbackSkip↷</button>
                 </div>
                 <div id="bottom">
+                  $partMarkup
                   <div class="time-row">
                     <span id="current">00:00</span><span id="duration">--:--</span>
                   </div>
@@ -317,6 +340,14 @@ internal object BrowserHlsDocument {
               document.getElementById('rotateBottom').addEventListener('click',rotate);
               document.getElementById('lines').addEventListener('click',function(){
                 state('lines');chromeVisible(true);
+              });
+              document.querySelectorAll('#cdRow button[data-part]').forEach(function(button){
+                button.addEventListener('click',function(){
+                  var part=button.getAttribute('data-part');
+                  if(!button.disabled && /^CD[1-9][0-9]?$/.test(part)){
+                    state('part:'+part);chromeVisible(true);
+                  }
+                });
               });
               // Use only manifest-declared renditions, never infer a resolution
               // from the EVS/LUC provider's hls2/hls3/hls4 URL tokens.
