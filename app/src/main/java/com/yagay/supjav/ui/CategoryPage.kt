@@ -1,6 +1,5 @@
 package com.yagay.supjav.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items as rowItems
@@ -40,7 +39,7 @@ fun CategoryPage(
     initialKind: FeedKind? = null,
     initialPath: String = "",
     directoryFilter: String = "",
-    backEnabled: Boolean = true
+    onBackActionChanged: ((() -> Unit)?) -> Unit = {}
 ) {
     var directory by remember { mutableStateOf(app.categoryStore.snapshot()) }
     var pinned by remember { mutableStateOf(app.categoryStore.pins().toSet()) }
@@ -101,12 +100,24 @@ fun CategoryPage(
         }
     }
     val current = selectedKind
-    // A covered category page must not consume Back ahead of the visible
-    // detail/player overlay. Root owns Back while an overlay is on top.
-    BackHandler(enabled = backEnabled && current != null && selectedPath.isNotEmpty()) {
-        Diagnostics.log("NAV_BACK_CATEGORY_TO_DIRECTORY")
-        selectedKind = null
-        selectedPath = ""
+    // Category owns its local selection state, but only the root route
+    // controller registers a system Back handler. This prevents an offscreen
+    // category from consuming the first Back while a player overlays it.
+    val returnToDirectory = remember {
+        {
+            Diagnostics.log("NAV_BACK_CATEGORY_TO_DIRECTORY")
+            selectedKind = null
+            selectedPath = ""
+            selectedTitle = ""
+        }
+    }
+    SideEffect {
+        onBackActionChanged(
+            if (current != null && selectedPath.isNotEmpty()) returnToDirectory else null
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { onBackActionChanged(null) }
     }
     if (current != null && selectedPath.isNotEmpty()) {
         Column(Modifier.fillMaxSize()) {
