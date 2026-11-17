@@ -54,6 +54,10 @@ fun ScriptPlayerScreen(
     var reload by remember(server.id, server.link) { mutableIntStateOf(0) }
     var detected by remember(server.id, server.link) { mutableStateOf<PlaybackSource?>(null) }
     var nativeProbeStatus by remember(server.id, server.link) { mutableStateOf<String?>(null) }
+    var browserHlsSource by remember(server.id, server.link) {
+        mutableStateOf<PlaybackSource?>(null)
+    }
+    var useEmbeddedHls by remember(server.id, server.link) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
@@ -71,6 +75,8 @@ fun ScriptPlayerScreen(
             TextButton(onClick = {
                 detected = null
                 nativeProbeStatus = null
+                browserHlsSource = null
+                useEmbeddedHls = false
                 reload++
             }) { Text("刷新") }
         }
@@ -110,7 +116,27 @@ fun ScriptPlayerScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        key(server.link, reload) {
+        if (browserHlsSource != null && !useEmbeddedHls && detected == null) {
+            TextButton(
+                onClick = {
+                    Diagnostics.log("EMBEDDED_HLS_SELECTED line=" + server.name)
+                    useEmbeddedHls = true
+                },
+                modifier = Modifier.padding(horizontal = 12.dp)
+            ) {
+                Text("尝试内置 HLS 播放（不显示第三方播放器网页）")
+            }
+        }
+        if (useEmbeddedHls && browserHlsSource != null) {
+            EmbeddedHlsPlayer(
+                source = requireNotNull(browserHlsSource),
+                onWebsitePlayer = {
+                    useEmbeddedHls = false
+                    reload++
+                }
+            )
+        } else {
+            key(server.link, reload) {
             val session = remember(server.link, server.verifiedPlayerUrl, reload) {
                 SelectedMediaSession(
                     server.detailUrl,
@@ -164,6 +190,14 @@ fun ScriptPlayerScreen(
                                     " status=" + result.status +
                                     " reason=" + result.reason)
                                 if (detected == null) {
+                                    if (source.mimeType == "application/x-mpegURL" &&
+                                        server.name.trim().uppercase() in setOf("EVS", "LUC") &&
+                                        result.status in setOf(403, 416)) {
+                                        browserHlsSource = source
+                                        Diagnostics.log("EMBEDDED_HLS_AVAILABLE line=" +
+                                            server.name + " host=" +
+                                            Uri.parse(source.url).host)
+                                    }
                                     val reason = when (result.status) {
                                         403 -> "HTTP 403：源站拒绝原生网络请求"
                                         401 -> "HTTP 401：媒体地址需要认证"
@@ -274,6 +308,15 @@ fun ScriptPlayerScreen(
                                             if (u && u.indexOf('https://') === 0 &&
                                                 media.indexOf(u) < 0) media.push(u);
                                         }
+                                        try {
+                                            var linksObj = (typeof links !== 'undefined') ?
+                                                links : window.links;
+                                            if (linksObj && typeof linksObj === 'object') {
+                                                ['hls2','hls4','hls3'].forEach(function(k) {
+                                                    add(linksObj[k]);
+                                                });
+                                            }
+                                        } catch(e) {}
                                         try {
                                             if (typeof jwplayer === 'function') {
                                                 var playlist = jwplayer().getPlaylist()[0] || {};
@@ -537,6 +580,7 @@ fun ScriptPlayerScreen(
                     }
                 }
             )
+            }
         }
     }
 }
