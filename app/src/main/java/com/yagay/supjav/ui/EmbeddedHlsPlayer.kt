@@ -21,6 +21,7 @@ import com.yagay.supjav.data.BrowserHlsDocument
 import com.yagay.supjav.data.MediaSourceDetector
 import com.yagay.supjav.data.SupjavSource
 import com.yagay.supjav.model.PlaybackSource
+import com.yagay.supjav.player.WebPlaybackSession
 import com.yagay.supjav.util.Diagnostics
 
 /**
@@ -32,12 +33,22 @@ import com.yagay.supjav.util.Diagnostics
 @Composable
 internal fun EmbeddedHlsPlayer(
     source: PlaybackSource,
+    session: WebPlaybackSession,
     onWebsitePlayer: () -> Unit
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val document = remember(source.url, source.referer) {
-        BrowserHlsDocument.render(source)
+    val resume by produceState<Long?>(initialValue = null, source.url, session) {
+        value = session.restorePosition()
+    }
+    val document = remember(source.url, source.referer, resume) {
+        resume?.let { BrowserHlsDocument.render(source, it) }
+    }
+    if (resume == null) {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+            androidx.compose.material3.CircularProgressIndicator()
+        }
+        return
     }
     if (document == null || MediaSourceDetector.origin(source.referer) == null) {
         Text("不支持此媒体地址")
@@ -71,9 +82,12 @@ internal fun EmbeddedHlsPlayer(
                     it.requestedOrientation = originalOrientation
                 }
             }
-            webView?.stopLoading()
-            webView?.loadUrl("about:blank")
-            webView?.destroy()
+            webView?.let { current ->
+                session.detach(current)
+                current.stopLoading()
+                current.loadUrl("about:blank")
+                current.destroy()
+            }
             webView = null
         }
     }
@@ -83,6 +97,7 @@ internal fun EmbeddedHlsPlayer(
         factory = {
             WebView(context).apply {
                 webView = this
+                session.attach(this)
                 setBackgroundColor(android.graphics.Color.BLACK)
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
@@ -113,8 +128,24 @@ internal fun EmbeddedHlsPlayer(
                 }
                 webChromeClient = object : WebChromeClient() {
                     override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
-                        val code = message?.message()
-                            ?.takeIf { it.startsWith("SUPJAV_HLS_STATE:") }
+                        val raw = message?.message().orEmpty()
+                        if (raw.startsWith("SUPJAV_HLS_PROGRESS:")) {
+                            val fields = raw.removePrefix("SUPJAV_HLS_PROGRESS:").split(':')
+                            if (fields.size == 3) {
+                                val position = fields[0].toLongOrNull()
+                                val duration = fields[1].toLongOrNull()
+                                val playing = fields[2]
+                                if (position != null && duration != null &&
+                                    position in 0L..86_400_000L &&
+                                    duration in 0L..86_400_000L &&
+                                    playing in setOf("0", "1")) {
+                                    session.update(position, duration, playing == "1")
+                                }
+                            }
+                            return true
+                        }
+                        val code = raw
+                            .takeIf { it.startsWith("SUPJAV_HLS_STATE:") }
                             ?.removePrefix("SUPJAV_HLS_STATE:") ?: return false
                         // The only messages emitted by our player document are
                         // predefined state/action codes; never log signed URLs.
