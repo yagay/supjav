@@ -29,7 +29,9 @@ internal enum class SupjavLine {
 internal data class ServerExtraction(
     val candidates: List<PlaybackSource>,
     val nextPages: List<String>,
-    val vasApi: String? = null
+    val vasApi: String? = null,
+    /** Signed URLs remain internal; only these benign tags appear in logs. */
+    val candidateTags: Map<String, String> = emptyMap()
 )
 
 /** Bounded static parsers. Does not execute JavaScript or bypass a site challenge. */
@@ -78,11 +80,15 @@ internal object SupjavServerAdapters {
         }
         val doc = Jsoup.parse(html.take(1_000_000), documentUrl)
         val urls = LinkedHashSet<String>()
-        fun add(value: String?) {
+        val candidateTags = LinkedHashMap<String, String>()
+        fun add(value: String?, tag: String? = null) {
             val raw = value?.takeIf { it.isNotBlank() } ?: return
             val cleaned = clean(raw)
             val absolute = runCatching { URI(documentUrl).resolve(cleaned).toString() }.getOrNull()
-            if (absolute != null && classify(absolute, documentUrl) != null) urls.add(absolute)
+            if (absolute != null && classify(absolute, documentUrl) != null) {
+                urls.add(absolute)
+                if (tag != null) candidateTags.putIfAbsent(absolute, tag)
+            }
         }
         val declared = when (line) {
             SupjavLine.VOE -> voeDeclaredSource(doc)
@@ -102,6 +108,13 @@ internal object SupjavServerAdapters {
             // A recognized player configuration must not fall back to those.
             add(declared)
         } else {
+            // EarnVids / LuluStream store several signed renditions in their
+            // own player config. Try hls2/master.m3u8 ahead of hls3/master.txt.
+            // Never invent a URL by changing its path or signature.
+            if (line == SupjavLine.EVS || line == SupjavLine.LUC) {
+                val variants = rankedHlsCandidates(scriptsToScan, documentUrl)
+                variants.forEach { (tag, url) -> add(url, tag) }
+            }
             doc.select("video[src], video source[src], source[type*=video][src]").forEach {
                 add(it.absUrl("src"))
             }
@@ -138,8 +151,46 @@ internal object SupjavServerAdapters {
         return ServerExtraction(
             urls.mapNotNull { classify(it, documentUrl) }.distinctBy { it.url },
             next.toList().take(5),
-            api
+            api,
+            candidateTags
         )
+    }
+
+    /**
+     * Vidhide/EarnVids player data commonly exposes hls2, hls4 and hls3.
+     * Unlike an arbitrary HTML URL scan, these are explicit player-config
+     * entries and must be tried in source-specific order.
+     *
+     * The URLs are used verbatim after bounded HTTPS validation: changing
+     * their CDN paths would invalidate the server's signed token.
+     */
+    internal fun rankedHlsCandidates(
+        scripts: List<String>, documentUrl: String
+    ): List<Pair<String, String>> {
+        if (MediaSourceDetector.origin(documentUrl) == null) return emptyList()
+        val recognized = linkedMapOf<String, String>()
+        val declarations = Regex(
+            """(?i)(?:^|[,{\s])["']?(hls[234])["']?\s*:\s*["']([^"'<>]{1,3000})["']"""
+        )
+        for (script in scripts.take(140)) {
+            // Player script only. Avoid arbitrary ad-side HLS strings.
+            if (!script.contains("hls2", true) &&
+                !script.contains("hls3", true) &&
+                !script.contains("hls4", true)) continue
+            for (entry in declarations.findAll(script.take(100_000))) {
+                val tag = entry.groupValues[1].lowercase(Locale.US)
+                if (tag in recognized) continue
+                val raw = clean(entry.groupValues[2])
+                val url = runCatching { URI(documentUrl).resolve(raw).toString() }.getOrNull()
+                    ?: continue
+                val source = classify(url, documentUrl) ?: continue
+                if (source.mimeType != "application/x-mpegURL") continue
+                recognized[tag] = source.url
+            }
+        }
+        return listOf("hls2", "hls4", "hls3")
+            .mapNotNull { tag -> recognized[tag]?.let { tag to it } }
+            .distinctBy { it.second }
     }
 
     /** Read FST links map and its declared HLS priority without evaluating scripts. */
