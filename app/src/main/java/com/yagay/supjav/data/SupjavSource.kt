@@ -331,17 +331,17 @@ class SupjavSource {
                                         val parent = root.trimEnd('/')
                                         val nextPath = URI(next).path.trimEnd('/')
                                         val query = URI(next).rawQuery.orEmpty()
-                                        nextPath.startsWith("$"+"parent/page/") ||
+                                        nextPath.startsWith("$parent/page/") ||
                                             (nextPath == parent && Regex("(?i)(?:^|&)paged=\\d+").containsMatchIn(query))
                                     }
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
-                                    Diagnostics.log("DIRECTORY_SOURCE_FAILED root=$"+"root page=$"+"pages reason=$"+"{e.javaClass.simpleName}")
+                                    Diagnostics.log("DIRECTORY_SOURCE_FAILED root=$root page=$pages reason=${e.javaClass.simpleName}")
                                     cursor = null
                                 }
                             }
-                            Diagnostics.log("DIRECTORY_SOURCE root=$"+"root count=$"+"{found.size} pages=$"+"pages more=$"+"{cursor != null}")
+                            Diagnostics.log("DIRECTORY_SOURCE root=$root count=${found.size} pages=$pages more=${cursor != null}")
                             SourceScan(found.values.toList(), cursor != null, success)
                         }
                     }
@@ -351,7 +351,7 @@ class SupjavSource {
                 throw IOException("网站目录页面均无法访问，已保留本地分类缓存")
             }
             val merged = scans.flatMap { it.items }.distinctBy { it.path }
-            Diagnostics.log("DIRECTORY_SYNC items=$"+"{merged.size} successes=$"+"{scans.count { it.success }} failures=$"+"{scans.count { !it.success }} more=$"+"{scans.any { it.more }}")
+            Diagnostics.log("DIRECTORY_SYNC items=${merged.size} successes=${scans.count { it.success }} failures=${scans.count { !it.success }} more=${scans.any { it.more }}")
             DirectoryScan(
                 merged, scans.any { it.more },
                 scans.count { it.success }, scans.count { !it.success }

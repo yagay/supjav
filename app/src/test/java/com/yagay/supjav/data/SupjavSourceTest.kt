@@ -174,7 +174,7 @@ class SupjavSourceTest {
     @Test fun taxonomyDirectoryDoesNotTruncateAfterThreeHundredItems() {
         val html = buildString {
             append("<main>")
-            for (i in 1..360) append("<a href='/tag/example-$"+"i/'>Tag $ "+"i</a>")
+            for (i in 1..360) append("<a href='/tag/example-$i/'>Tag $i</a>")
             append("</main>")
         }
         val options = source.parseBrowseOptions(html)
