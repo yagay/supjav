@@ -48,7 +48,7 @@ fun RecommendPage(
     app: SupjavApp, onVideo: (VideoItem) -> Unit,
     onSearch: () -> Unit, refreshKey: Int,
     onBrowse: (FeedKind, String) -> Unit = { _, _ -> },
-    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
+    onPlaylistCaptured: (List<VideoItem>, com.yagay.supjav.data.PlaylistPageSource?) -> Unit = { _, _ -> }
 ) {
     // The shortcuts come from real website navigation discovered previously,
     // never hardcoded category names or invented home-page recommendations.
@@ -94,7 +94,7 @@ fun RecommendPage(
 @Composable
 fun RankPage(
     app: SupjavApp, onVideo: (VideoItem) -> Unit,
-    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
+    onPlaylistCaptured: (List<VideoItem>, com.yagay.supjav.data.PlaylistPageSource?) -> Unit = { _, _ -> }
 ) {
     var selected by rememberSaveableRank() 
     val ranks = listOf(FeedKind.DAY, FeedKind.WEEK, FeedKind.MONTH)
@@ -129,7 +129,7 @@ fun MinePage(
     onVideo: (VideoItem) -> Unit,
     onSettings: () -> Unit,
     revision: Int = 0,
-    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
+    onPlaylistCaptured: (List<VideoItem>, com.yagay.supjav.data.PlaylistPageSource?) -> Unit = { _, _ -> }
 ) {
     var watched by remember { mutableStateOf(emptyList<VideoItem>()) }
     var saved by remember { mutableStateOf(emptyList<VideoItem>()) }
