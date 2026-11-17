@@ -315,7 +315,10 @@ fun FeedScreen(
                 itemsIndexed(data, key = { _, video -> video.id }) { index, video ->
                     VideoTile(
                         video, onClick = {
-                            onPlaylistCaptured(data.toList())
+                            onPlaylistCaptured(
+                                data.toList(),
+                                com.yagay.supjav.data.PlaylistPageSource(kind, value, pageState)
+                            )
                             onVideo(video)
                         }, app = app,
                         rank = if (kind in setOf(FeedKind.DAY, FeedKind.WEEK, FeedKind.MONTH))
