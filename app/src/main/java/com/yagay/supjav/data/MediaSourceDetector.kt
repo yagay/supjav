@@ -12,13 +12,17 @@ object MediaSourceDetector {
     fun origin(url: String): String? = runCatching {
         val uri = URI(url)
         val host = uri.host?.lowercase(Locale.US) ?: return@runCatching null
-        val bad = host == "localhost" || host == "0.0.0.0" ||
-            host == "127.0.0.1" || host == "::1" || host.startsWith("10.") ||
-            host.startsWith("192.168.") ||
-            Regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.").containsMatchIn(host) ||
-            host.endsWith(".local") || host.endsWith(".internal")
+        // Only ordinary DNS hosts. Reject IPv4/IPv6 literals, numeric aliases,
+        // loopback suffixes, IDN lookalikes, embedded credentials and ports.
+        val validDomain = Regex("^[a-z0-9-]+(?:\\.[a-z0-9-]+)+$").matches(host) &&
+            host.split('.').none { it.isBlank() || it.startsWith('-') || it.endsWith('-') } &&
+            !host.split('.').last().all { it.isDigit() } &&
+            !host.endsWith(".local") && !host.endsWith(".localhost") &&
+            !host.endsWith(".internal") && !host.endsWith(".lan") &&
+            !host.endsWith(".home") && !host.endsWith(".test")
         if (uri.scheme?.lowercase(Locale.US) != "https" || uri.userInfo != null ||
-            host.isBlank() || bad || (uri.port != -1 && uri.port != 443)) null
+            !validDomain || uri.rawAuthority.orEmpty().contains('%') ||
+            (uri.port != -1 && uri.port != 443)) null
         else "https://" + host
     }.getOrNull()
 

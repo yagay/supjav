@@ -3,14 +3,14 @@ package com.yagay.supjav.data
 import java.net.URI
 
 /**
- * The published Supjav wrapper convention for opaque hex server tokens.
+ * The observed Supjav wrapper convention for opaque ASCII server tokens.
  * Prefer the site's current JumpChain function, which may change independently.
  * Only used inside the site's iframe browsing context, never as a top-level HTTP GET.
  */
 internal object SitePlayerWrapper {
     fun fromLegacyToken(rawToken: String): String? {
         val token = rawToken.trim()
-        if (!token.matches(Regex("[0-9a-fA-F]{64,200}"))) return null
+        if (!token.matches(Regex("[A-Za-z0-9_-]{3,512}"))) return null
         return "https://lk1.supremejav.com/supjav.php?c=" + token.reversed()
     }
 

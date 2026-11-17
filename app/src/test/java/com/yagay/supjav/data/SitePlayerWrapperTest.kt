@@ -11,7 +11,7 @@ class SitePlayerWrapperTest {
         assertEquals("https://lk1.supremejav.com/supjav.php?c=" + token.reversed(), url)
         assertTrue(SitePlayerWrapper.isSiteWrapper(requireNotNull(url)))
         assertNull(SitePlayerWrapper.fromLegacyToken("https://example.com/video.m3u8"))
-        assertNull(SitePlayerWrapper.fromLegacyToken("short-token"))
+        assertNull(SitePlayerWrapper.fromLegacyToken("a!"))
         assertNull(SitePlayerWrapper.fromLegacyToken("a1".repeat(64) + "!"))
     }
 
