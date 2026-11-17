@@ -134,7 +134,7 @@ fun VideoTile(
 fun FeedScreen(
     app: SupjavApp, kind: FeedKind, value: String,
     onVideo: (VideoItem) -> Unit, refreshKey: Int = 0,
-    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
+    onPlaylistCaptured: (List<VideoItem>, com.yagay.supjav.data.PlaylistPageSource?) -> Unit = { _, _ -> }
 ) {
     // The cached feed survives tab/detail navigation. A refresh updates the
     // same list atomically instead of constructing an empty, new cache page.
