@@ -69,7 +69,11 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
                 val status = generateSequence(error as Throwable?) { it.cause }
                     .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
                     .firstOrNull()?.responseCode
-                if (PlaybackRecoveryPolicy.mayRetry(error.errorCode, status)) {
+                val retryable = PlaybackRecoveryPolicy.mayRetry(error.errorCode, status)
+                Diagnostics.log("PLAYER_HTTP_RESULT status=" + status +
+                    " retryable=" + retryable +
+                    " errorCode=" + error.errorCodeName)
+                if (retryable) {
                     lastGoodPosition = player.currentPosition.coerceAtLeast(0L)
                     scheduleRetry()
                 }
