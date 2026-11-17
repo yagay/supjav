@@ -37,6 +37,38 @@ object VideoParts {
         } ?: candidates.firstOrNull()
     }
 
+    /**
+     * Several SUPJAV pages expose CD1 and CD2 as two consecutive *sets* of
+     * providers, each with the same provider names (e.g. EVS/ST/VOE/LUC/VAS)
+     * but different data-link tokens. Their buttons do not contain "CD1".
+     *
+     * Detect this exact repeated-set shape. Five *different* providers are
+     * ordinary mirrors, not five parts. Never group unknown names, duplicate
+     * tokens, or incomplete/nonmatching sets.
+     */
+    fun groupRepeatedProviderSets(servers: List<VideoServer>): List<VideoServer> {
+        if (servers.size !in 6..80 || servers.any { partOf(it) != null }) return servers
+        if (servers.map { it.link }.distinct().size != servers.size) return servers
+
+        val providers = servers.map { SupjavLine.of(it.name) }
+        if (providers.any { it == SupjavLine.UNKNOWN }) return servers
+
+        for (partCount in 2..minOf(10, servers.size / 3)) {
+            if (servers.size % partCount != 0) continue
+            val groupSize = servers.size / partCount
+            if (groupSize !in 3..8) continue
+            val groups = providers.chunked(groupSize)
+            val expected = groups.first().toSet()
+            if (expected.size != groupSize) continue
+            if (groups.all { it.size == groupSize && it.toSet() == expected }) {
+                return servers.mapIndexed { index, server ->
+                    server.copy(part = "CD${index / groupSize + 1}")
+                }
+            }
+        }
+        return servers
+    }
+
     fun firstPartFirst(servers: List<VideoServer>): List<VideoServer> {
         val parts = available(servers)
         if (parts.size < 2) return servers
