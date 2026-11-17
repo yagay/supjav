@@ -306,6 +306,30 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
                 }
             }
         }
+        OutlinedButton(
+            onClick = {
+                defaultSpeed = 1f
+                holdSpeed = 2f
+                skipSeconds = 10
+                defaultFill = false
+                preferredLine = "auto"
+                autoplay = true
+                resumePlayback = true
+                prefs.edit()
+                    .remove(PlaybackDefaults.SPEED)
+                    .remove(PlaybackDefaults.HOLD)
+                    .remove(PlaybackDefaults.SEEK)
+                    .remove(PlaybackDefaults.FIT)
+                    .remove(PlaybackDefaults.LINE)
+                    .remove(PlaybackDefaults.AUTOPLAY)
+                    .remove(PlaybackDefaults.RESUME)
+                    .apply()
+                app.updateVideoQuality(VideoQualityPolicy.DEFAULT)
+            }, modifier = Modifier.fillMaxWidth()
+        ) { Text("恢复默认播放设置") }
+        Text("仅重置播放画质、速度、比例、线路、手势和续播选项，不影响收藏与历史。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         SupjavSectionTitle("启动与外观")
         Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
             color = MaterialTheme.colorScheme.surface) {

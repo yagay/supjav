@@ -167,8 +167,8 @@ internal object BrowserHlsDocument {
               if(speedIndex<0)speedIndex=1;
               video.playbackRate=defaultRate;
               speed.textContent=defaultRate+'×';
-              aspect.textContent=video.style.objectFit==='cover'?'铺满':'适应';
               video.style.objectFit='$playbackFit';
+              aspect.textContent=video.style.objectFit==='cover'?'铺满':'适应';
               function state(code){ console.log('SUPJAV_HLS_STATE:' + code); }
               function reportProgress(force){
                 var now = Date.now();

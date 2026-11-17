@@ -425,6 +425,11 @@ fun PlayerScreen(
             override fun onTracksChanged(tracks: Tracks) {
                 qualityHeights = engine.availableVideoHeights()
             }
+            override fun onPlaybackParametersChanged(
+                params: androidx.media3.common.PlaybackParameters
+            ) {
+                speed = params.speed
+            }
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
                 duration = player.duration.coerceAtLeast(0)
