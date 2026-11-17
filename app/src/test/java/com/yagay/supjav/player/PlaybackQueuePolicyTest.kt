@@ -33,6 +33,13 @@ class PlaybackQueuePolicyTest {
         assertEquals(listOf("1", "9"), queue.map { it.id })
     }
 
+
+    @Test fun newlyLoadedPagesAreNotTruncatedAtTwoHundredItems() {
+        val list = (1..260).map { video(it.toString()) }
+        assertEquals(260, PlaybackQueuePolicy.snapshot(list).size)
+        assertEquals("260", PlaybackQueuePolicy.adjacent(list, "259", 1)?.id)
+    }
+
     @Test fun preferredHostStaysWithinFirstCd() {
         val servers = listOf(
             line("c1-evs", "EVS", "CD1"),
