@@ -253,6 +253,67 @@ class SupjavSourceTest {
         assertTrue(entries.all { it.part == null })
     }
 
+
+    @Test fun castParagraphWithLinksIsRecognizedAndNavigable() {
+        val html = """
+          <div class="post-meta clearfix">
+            <div class="cats">
+              <p><span>Cast: </span>
+                <a href="/category/cast/actress-one/">Actress One</a>,
+                <a href="/cast/actress-two/">Actress Two</a>
+              </p>
+              <p><span>Maker:</span><a href="/maker/studio/">Studio</a></p>
+            </div>
+          </div>
+        """.trimIndent()
+        val cast = source.parseCastMetadata(html, "https://supjav.com/187772.html")
+        assertEquals(listOf("Actress One", "Actress Two"), cast.names)
+        assertEquals(2, cast.links.size)
+        assertEquals(listOf("/category/cast/actress-one", "/cast/actress-two"),
+            cast.links.map { it.path })
+        assertTrue(cast.links.all {
+            it.kind == com.yagay.supjav.model.FeedKind.ACTOR
+        })
+    }
+
+    @Test fun textOnlyLabeledCastIsDisplayedWithoutInventingFilterUrl() {
+        val html = """
+          <div class="post-meta"><div class="cats">
+            <p><span>Cast:</span> Person A、Person B</p>
+          </div></div>
+        """.trimIndent()
+        val cast = source.parseCastMetadata(html)
+        assertEquals(listOf("Person A", "Person B"), cast.names)
+        assertTrue(cast.links.isEmpty())
+    }
+
+    @Test fun castParagraphSupportsLegacyCategoryLinkButIgnoresUnrelatedLinks() {
+        val html = """
+          <div class="post-meta"><div class="cats">
+            <p><span>Cast:</span>
+              <a href="/category/actor-legacy/">Legacy Performer</a>
+              <a href="https://other.example/cast/fake/">External Actor</a>
+            </p>
+            <p><span>Category:</span><a href="/category/other/">Other</a></p>
+          </div></div>
+        """.trimIndent()
+        val cast = source.parseCastMetadata(html)
+        assertEquals(listOf("Legacy Performer", "External Actor"), cast.names)
+        assertEquals(listOf("/category/actor-legacy"), cast.links.map { it.path })
+    }
+
+    @Test fun castMetadataNeverUsesUnlabeledSiteNavigationAsActors() {
+        val html = """
+          <nav><a href="/cast/someone/">Site-wide Cast Directory</a></nav>
+          <div class="post-meta"><div class="cats">
+            <p><span>Maker:</span><a href="/maker/one/">Maker</a></p>
+          </div></div>
+        """.trimIndent()
+        val cast = source.parseCastMetadata(html)
+        assertTrue(cast.names.isEmpty())
+        assertTrue(cast.links.isEmpty())
+    }
+
     @Test fun rejectsLocalOrInsecureMediaTargets() {
         assertFalse(source.isPublicHttps("http://example.com/a.mp4"))
         assertFalse(source.isPublicHttps("https://localhost:1000/"))
