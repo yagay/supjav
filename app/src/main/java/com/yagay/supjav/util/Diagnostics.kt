@@ -14,6 +14,8 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * App-local diagnostic events, persisted across process restarts.
@@ -24,6 +26,14 @@ object Diagnostics {
     private const val MAX_FILE_BYTES = 450_000L
     private val events = ArrayDeque<String>()
     private var application: Context? = null
+    // Disk writes are serialized off the UI thread. Export/preview flush
+    // pending writes first so the diagnostic ZIP is complete.
+    private val writer = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "SupjavDiagnostics").apply { isDaemon = true }
+    }
+    private fun flushPendingWrites() {
+        runCatching { writer.submit {}.get(5, TimeUnit.SECONDS) }
+    }
 
     @Synchronized
     fun initialize(context: Context) {
@@ -58,15 +68,17 @@ object Diagnostics {
         if (events.size >= MAX_RECENT) events.removeFirst()
         events.addLast(event)
         val ctx = application ?: return
-        runCatching {
-            val dir = logDir(ctx).apply { mkdirs() }
-            val file = logFile(ctx)
-            if (file.length() >= MAX_FILE_BYTES) {
-                val previous = File(dir, "events.previous.log")
-                previous.delete()
-                file.renameTo(previous)
+        writer.execute {
+            runCatching {
+                val dir = logDir(ctx).apply { mkdirs() }
+                val file = logFile(ctx)
+                if (file.length() >= MAX_FILE_BYTES) {
+                    val previous = File(dir, "events.previous.log")
+                    previous.delete()
+                    file.renameTo(previous)
+                }
+                file.appendText(event + "\n", Charsets.UTF_8)
             }
-            file.appendText(event + "\n", Charsets.UTF_8)
         }
     }
 
@@ -75,6 +87,7 @@ object Diagnostics {
 
     @Synchronized
     fun preview(limit: Int = 120): String {
+        flushPendingWrites()
         val ctx = application
         val stored = ctx?.let { context ->
             val file = logFile(context)
@@ -86,6 +99,7 @@ object Diagnostics {
 
     @Synchronized
     fun clear() {
+        flushPendingWrites()
         events.clear()
         application?.let { ctx ->
             logFile(ctx).delete()
@@ -123,6 +137,7 @@ object Diagnostics {
         val ctx = context.applicationContext
         if (application == null) initialize(ctx)
         log("DIAGNOSTICS_EXPORT")
+        flushPendingWrites()
         val dir = File(ctx.cacheDir, "diagnostics").apply { mkdirs() }
         dir.listFiles()?.filter { it.name.endsWith(".zip") && System.currentTimeMillis() - it.lastModified() > 24L * 60 * 60 * 1000 }
             ?.forEach { it.delete() }
