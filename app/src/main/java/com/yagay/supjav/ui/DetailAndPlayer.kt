@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -895,34 +896,40 @@ fun PlayerScreen(
                 if (availableParts.size > 1) {
                     LazyRow(
                         Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         item {
                             Text("分段", color = Color.White.copy(alpha = .75f),
-                                style = MaterialTheme.typography.labelMedium)
+                                style = MaterialTheme.typography.labelSmall)
                         }
                         items(availableParts) { part ->
                             val selected = part == activePart
-                            TextButton(
-                                onClick = { onSelectPart(part) },
-                                enabled = !partSwitching && !selected,
-                                modifier = Modifier.height(32.dp)
+                            // Material TextButton enforces a 64dp minimum width;
+                            // the compact CD labels need only their actual text
+                            // width and a small, consistent inset.
+                            val shape = RoundedCornerShape(7.dp)
+                            Box(
+                                modifier = Modifier.height(26.dp)
+                                    .clip(shape)
                                     .background(
                                         if (selected) Color.White.copy(alpha = .32f)
-                                        else Color.White.copy(alpha = .13f),
-                                        RoundedCornerShape(10.dp)
-                                    ),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                        else Color.White.copy(alpha = .13f)
+                                    )
+                                    .clickable(
+                                        enabled = !partSwitching && !selected
+                                    ) { onSelectPart(part) }
+                                    .padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(part, color = Color.White,
-                                    style = MaterialTheme.typography.labelMedium)
+                                    style = MaterialTheme.typography.labelSmall)
                             }
                         }
                         if (partSwitching) {
                             item {
                                 CircularProgressIndicator(
-                                    Modifier.size(16.dp), strokeWidth = 2.dp,
+                                    Modifier.size(14.dp), strokeWidth = 2.dp,
                                     color = Color.White
                                 )
                             }
