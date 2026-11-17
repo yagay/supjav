@@ -1,6 +1,8 @@
 package com.yagay.supjav
 
 import android.app.Application
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.yagay.supjav.data.LibraryStore
 import com.yagay.supjav.data.PlaybackResolver
 import com.yagay.supjav.data.SupjavSource
