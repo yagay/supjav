@@ -68,6 +68,29 @@ class MediaSourceDetectorTest {
             "https://evsishere.xyz/e/abc"))
     }
 
+    @Test fun rootSiteDoesNotTrustAdPlayerOrUnrelatedMedia() {
+        val session = SelectedMediaSession(site)
+        val thirdParty = "https://cdn.storagexhd.com/movie.mp4"
+        assertFalse(session.trustFrame(site,
+            "https://a.eix304.com/e/player"))
+        assertFalse(session.trustFrame(site,
+            "https://creative.greentrafsa.com/embed/video"))
+        assertFalse(session.admitDocument(
+            "https://cdn.storagexhd.com/e/watch", site))
+        assertNull(session.fromNetworkRequest(thirdParty, site))
+        assertNull(session.fromPageReport(
+            "https://supjav.com", site, thirdParty))
+        assertTrue(session.trustFrame(site,
+            "https://lk1.supremejav.com/supjav.php?c=abc"))
+        assertTrue(session.trustFrame(
+            "https://lk1.supremejav.com/supjav.php?c=abc",
+            "https://evsishere.xyz/e/player"))
+        assertNotNull(session.fromPageReport(
+            "https://evsishere.xyz",
+            "https://evsishere.xyz/e/player",
+            "https://cdn.example.com/hls3/master.txt"))
+    }
+
     @Test fun wrongFrameOriginAndHttpSubframesRejected() {
         val session = SelectedMediaSession(site)
         assertFalse(session.trustFrame(
