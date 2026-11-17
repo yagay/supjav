@@ -324,7 +324,8 @@ class SupjavSource {
                                     success = true
                                     parseBrowseOptions(html, url).forEach { found[it.path] = it }
                                     pages++
-                                    val candidate = parseListingPage(html, url, pages).nextUrl
+                                    val candidate = if (root == "/") null
+                                        else parseListingPage(html, url, pages).nextUrl
                                     // Follow the index's pager only; never jump from
                                     // the taxonomy index to an unrelated video feed.
                                     cursor = candidate?.takeIf { next ->
