@@ -21,7 +21,11 @@ class SupjavSource {
         const val UA = "Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
     }
     private val http = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS).followRedirects(true).build()
+        .readTimeout(25, TimeUnit.SECONDS)
+        // Site redirects must be validated hop by hop before proceeding.
+        .followRedirects(false).followSslRedirects(false).build()
+    private fun isSiteUrl(url: String): Boolean =
+        MediaSourceDetector.origin(url) in setOf(BASE, "https://www.supjav.com")
     private val videoPattern = Regex("/(\\d+)\\.html(?:[?#].*)?$")
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
@@ -58,16 +62,36 @@ class SupjavSource {
     }
 
     fun fetch(url: String, referer: String = BASE + "/"): String {
-        require(isPublicHttps(url)) { "Only public HTTPS hosts are allowed" }
-        val req = Request.Builder().url(url).header("User-Agent", UA)
-            .header("Referer", referer).build()
-        Diagnostics.log("HTTP_REQUEST host=" + URI(url).host + " type=" +
-            if (url.contains(".html")) "detail" else "page-or-player")
-        http.newCall(req).execute().use { response ->
-            Diagnostics.log("HTTP_RESULT status=" + response.code + " host=" + URI(url).host)
-            if (!response.isSuccessful) throw IOException("HTTP " + response.code + " from " + URI(url).host)
-            return response.body?.string()?.take(3_000_000) ?: throw IOException("Empty response")
+        require(isSiteUrl(url)) { "Only known Supjav HTTPS site routes are allowed" }
+        var target = url
+        repeat(5) { hop ->
+            if (!isSiteUrl(target)) throw IOException("Unexpected site redirect target")
+            val req = Request.Builder().url(target).header("User-Agent", UA)
+                .header("Referer", referer).build()
+            Diagnostics.log("HTTP_REQUEST host=" + URI(target).host +
+                " hop=" + hop + " type=" +
+                if (target.contains(".html")) "detail" else "page")
+            http.newCall(req).execute().use { response ->
+                val status = response.code
+                if (status in listOf(301, 302, 303, 307, 308)) {
+                    val location = response.header("Location")
+                        ?: throw IOException("Redirect without Location")
+                    val resolved = URI(target).resolve(location).toString()
+                    if (!isSiteUrl(resolved)) throw IOException("Untrusted site redirect")
+                    Diagnostics.log("HTTP_REDIRECT status=" + status +
+                        " toHost=" + URI(resolved).host)
+                    target = resolved
+                    return@use
+                }
+                Diagnostics.log("HTTP_RESULT status=" + status +
+                    " host=" + URI(target).host)
+                if (!response.isSuccessful)
+                    throw IOException("HTTP " + status + " from " + URI(target).host)
+                return response.body?.string()?.take(3_000_000)
+                    ?: throw IOException("Empty response")
+            }
         }
+        throw IOException("Too many site redirects")
     }
 
     fun isPublicHttps(url: String): Boolean { return try {
@@ -94,6 +118,7 @@ class SupjavSource {
                 else card.selectFirst("a.img[href], h3 a[href], .post-title a[href], a[href$=.html]")
             anchor ?: return@mapNotNull null
             val url = anchor.absUrl("href").ifBlank { resolveUrl(base, anchor.attr("href")) }
+            if (!isSiteUrl(url)) return@mapNotNull null
             val id = videoPattern.find(url)?.groupValues?.getOrNull(1) ?: return@mapNotNull null
             val image = card.selectFirst("img") ?: anchor.selectFirst("img")
             val cover = image?.let {
