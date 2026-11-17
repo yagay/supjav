@@ -39,7 +39,8 @@ fun CategoryPage(
     initialKind: FeedKind? = null,
     initialPath: String = "",
     directoryFilter: String = "",
-    onBackActionChanged: ((() -> Unit)?) -> Unit = {}
+    onBackActionChanged: ((() -> Unit)?) -> Unit = {},
+    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
 ) {
     var directory by remember { mutableStateOf(app.categoryStore.snapshot()) }
     var pinned by remember { mutableStateOf(app.categoryStore.pins().toSet()) }
@@ -138,7 +139,8 @@ fun CategoryPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            FeedScreen(app, current, selectedPath, onVideo)
+            FeedScreen(app, current, selectedPath, onVideo,
+                onPlaylistCaptured = onPlaylistCaptured)
         }
         return
     }
