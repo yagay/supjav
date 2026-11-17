@@ -302,8 +302,11 @@ fun DetailScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // Always present the actor section; many source pages have no
+            // linked /cast/ path even when the metadata paragraph has names.
+            // The directory remains available when no cast data is supplied.
+            SupjavSectionTitle("演员")
             if (d.actors.isNotEmpty()) {
-                SupjavSectionTitle("Cast · 演员")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(d.actors) { actor ->
                         val target = d.taxonomy.firstOrNull {
@@ -317,9 +320,16 @@ fun DetailScreen(
                         )
                     }
                 }
+            } else {
+                Text("当前作品暂无演员资料",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick = { onFilter(FeedKind.ACTOR, "") }) {
+                Text("浏览演员目录")
             }
             if (d.makers.isNotEmpty()) {
-                SupjavSectionTitle("Maker · 制作商")
+                SupjavSectionTitle("制作商")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(d.makers) { maker ->
                         val target = d.taxonomy.firstOrNull {
