@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.BugReport
 import com.yagay.supjav.util.Diagnostics
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Tune
@@ -140,7 +141,7 @@ fun MinePage(
                     SupjavSectionTitle("本地片库", "管理收藏与最近播放")
                 }
                 IconButton(onClick = { refresh++ }) {
-                    Icon(androidx.compose.material.icons.outlined.Refresh, "刷新片库")
+                    Icon(Icons.Outlined.Refresh, "刷新片库")
                 }
                 IconButton(onClick = {
                     runCatching { Diagnostics.share(app) }
