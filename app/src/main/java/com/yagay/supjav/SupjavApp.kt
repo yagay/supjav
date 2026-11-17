@@ -28,7 +28,7 @@ class SupjavApp : Application() {
     var videoQuality by androidx.compose.runtime.mutableStateOf(VideoQualityPolicy.DEFAULT)
         private set
 
-    fun setVideoQuality(preference: String) {
+    fun updateVideoQuality(preference: String) {
         val normalized = VideoQualityPolicy.normalize(preference)
         videoQuality = normalized
         preferences.edit().putString("video_quality", normalized).apply()

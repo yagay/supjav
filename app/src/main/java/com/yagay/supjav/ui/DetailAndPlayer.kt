@@ -766,7 +766,7 @@ fun PlayerScreen(
                 val selected = app.videoQuality == mode
                 TextButton(
                     onClick = {
-                        app.setVideoQuality(mode)
+                        app.updateVideoQuality(mode)
                         qualityPickerOpen = false
                     },
                     modifier = Modifier.fillMaxWidth()

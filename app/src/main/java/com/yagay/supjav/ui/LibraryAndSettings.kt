@@ -169,7 +169,7 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
                     listOf("highest", "auto", "p1080", "p720", "p480").forEach { mode ->
                         FilterChip(
                             selected = qualityPreference == mode,
-                            onClick = { app.setVideoQuality(mode) },
+                            onClick = { app.updateVideoQuality(mode) },
                             label = { Text(VideoQualityPolicy.label(mode)) }
                         )
                     }

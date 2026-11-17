@@ -159,7 +159,7 @@ internal fun EmbeddedHlsPlayer(
                             code.startsWith("quality:") -> {
                                 val rawMode = code.removePrefix("quality:")
                                 if (VideoQualityPolicy.normalize(rawMode) == rawMode) {
-                                    app?.setVideoQuality(rawMode)
+                                    app?.updateVideoQuality(rawMode)
                                     Diagnostics.log("EMBEDDED_HLS_QUALITY mode=" + rawMode)
                                 }
                             }
