@@ -36,6 +36,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.yagay.supjav.SupjavApp
 import com.yagay.supjav.model.*
+import com.yagay.supjav.util.Diagnostics
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -93,6 +94,8 @@ fun DetailScreen(
         lineSheet = false
         playbackError = null
         resolving = server.id
+        Diagnostics.log("PLAY_SELECTED video=" + video.id + " line=" + server.name +
+            " entryLength=" + server.link.length)
         request = scope.launch {
             try {
                 when (val result = app.resolver.resolve(server)) {
@@ -100,9 +103,16 @@ fun DetailScreen(
                         app.playerEngine.play(detail?.video ?: video, result.source)
                         onPlay()
                     }
-                    is ResolveResult.Unavailable -> playbackError = result.reason
-                    ResolveResult.VerificationRequired ->
+                    is ResolveResult.Unavailable -> {
+                        playbackError = result.reason
+                        Diagnostics.log("PLAY_SOURCE_UNAVAILABLE video=" + video.id +
+                            " line=" + server.name + " reason=" + result.reason)
+                    }
+                    ResolveResult.VerificationRequired -> {
                         playbackError = "此播放源需要真人验证，尚不支持原生播放"
+                        Diagnostics.log("PLAY_VERIFICATION_REQUIRED video=" + video.id +
+                            " line=" + server.name)
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -211,14 +221,25 @@ fun DetailScreen(
                 }
             }
             if (playbackError != null) {
-                Text(
-                    playbackError.orEmpty(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
+                Column {
+                    Text(
+                        playbackError.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    TextButton(onClick = {
+                        runCatching { Diagnostics.share(context) }
+                            .onFailure { playbackError = "日志导出失败：" +
+                                it.javaClass.simpleName }
+                    }) { Text("导出这次失败的诊断 ZIP") }
+                }
             }
             if (d.servers.isEmpty()) {
                 SupjavEmptyState("未找到原生可解析的线路，可能需要网页脚本或人工验证")
+                TextButton(onClick = {
+                    Diagnostics.log("DETAIL_NO_SERVER_EXPORT video=" + video.id)
+                    runCatching { Diagnostics.share(context) }
+                }) { Text("导出线路诊断 ZIP") }
             }
             if (d.actors.isNotEmpty()) {
                 SupjavSectionTitle("演员")
@@ -444,6 +465,11 @@ fun PlayerScreen(
                                 player.prepare()
                                 player.play()
                             }) { Text("重新尝试") }
+                            TextButton(onClick = {
+                                runCatching { Diagnostics.share(context) }
+                                    .onFailure { currentError = "日志导出失败：" +
+                                        it.javaClass.simpleName }
+                            }) { Text("导出播放器日志") }
                         }
                     }
                 }
