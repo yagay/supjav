@@ -1,17 +1,12 @@
 package com.yagay.supjav.player
 
 /**
- * Single-tap behavior shared by playback surfaces: a playing fullscreen
- * video reveals its controls first, before another tap may pause.
- * Explicit play/pause buttons bypass this policy.
+ * A single tap on the video surface only toggles controller visibility.
+ * Playback state is exclusively changed by explicit controls or other gestures.
  */
 internal object PlayerTapPolicy {
-    enum class Action { REVEAL, PAUSE, RESUME }
+    enum class Action { SHOW, HIDE }
 
-    fun onSurfaceTap(controlsVisible: Boolean, playWhenReady: Boolean): Action =
-        when {
-            !playWhenReady -> Action.RESUME
-            !controlsVisible -> Action.REVEAL
-            else -> Action.PAUSE
-        }
+    fun onSurfaceTap(controlsVisible: Boolean): Action =
+        if (controlsVisible) Action.HIDE else Action.SHOW
 }
