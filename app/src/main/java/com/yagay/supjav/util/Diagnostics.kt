@@ -74,6 +74,17 @@ object Diagnostics {
     fun snapshot(): String = events.joinToString("\n")
 
     @Synchronized
+    fun preview(limit: Int = 120): String {
+        val ctx = application
+        val stored = ctx?.let { context ->
+            val file = logFile(context)
+            runCatching { if (file.exists()) file.readLines().takeLast(limit).joinToString("\n") else "" }
+                .getOrDefault("")
+        }.orEmpty()
+        return stored.ifEmpty { snapshot() }.ifBlank { "暂无应用诊断记录" }
+    }
+
+    @Synchronized
     fun clear() {
         events.clear()
         application?.let { ctx ->
