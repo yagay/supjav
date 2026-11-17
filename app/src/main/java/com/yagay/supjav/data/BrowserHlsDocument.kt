@@ -97,14 +97,15 @@ internal object BrowserHlsDocument {
             #progress::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:11px;height:11px;margin-top:-4px;background:#fff;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.35)}
             #progress::-moz-range-track{height:3px;background:rgba(255,255,255,.40);border-radius:3px}
             #progress::-moz-range-thumb{width:11px;height:11px;border:0;background:#fff;border-radius:50%}
-            .actions{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));align-items:center;gap:5px;margin-top:4px}
+            .actions{display:flex;align-items:center;gap:5px;margin-top:4px}
+            .actions .pill{flex:1 1 0;width:auto;min-width:0}
             .pill{height:37px;min-width:0;width:100%;padding:0 3px;border-radius:19px;background:rgba(255,255,255,.14);font-size:12px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
             #speed{font-variant-numeric:tabular-nums}
             #cdRow{display:flex;align-items:center;gap:4px;overflow-x:auto;white-space:nowrap;padding:0 0 3px;scrollbar-width:none}
             #cdRow span{font-size:11px;color:rgba(255,255,255,.77);margin-right:0}
             #cdRow .cd-button{flex:0 0 auto;min-height:26px;min-width:0;padding:0 8px;border-radius:7px;background:rgba(255,255,255,.15);font-size:11px;font-weight:600}
             #cdRow .cd-button.selected{background:rgba(255,255,255,.35);color:#fff;opacity:1}
-            @media(max-width:350px){.actions{grid-template-columns:repeat(6,minmax(0,1fr));gap:3px}.pill{font-size:11px}}
+            @media(max-width:350px){.actions{gap:3px}.pill{font-size:11px}}
             [hidden]{display:none!important}
             #qualityMenu{position:absolute;right:12px;bottom:calc(73px + env(safe-area-inset-bottom));z-index:6;max-height:min(48vh,280px);overflow:auto;display:flex;flex-direction:column;gap:3px;min-width:116px;border-radius:12px;padding:6px;background:rgba(25,25,25,.96);box-shadow:0 4px 20px rgba(0,0,0,.4)}
             #qualityMenu button{min-height:36px;justify-content:flex-start;padding:6px 12px;border-radius:8px;font-size:13px}
