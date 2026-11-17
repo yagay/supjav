@@ -364,6 +364,21 @@ fun PlayerScreen(
     var gestureScrubbing by remember { mutableStateOf(false) }
     var gesturePositionMs by remember { mutableLongStateOf(0L) }
     var pressBoostOriginal by remember { mutableStateOf<Float?>(null) }
+    var pressBoostSide by remember { mutableIntStateOf(0) }
+    var gestureFlash by remember { mutableStateOf<String?>(null) }
+    var gestureFlashSide by remember { mutableIntStateOf(0) }
+    var gestureFlashVersion by remember { mutableIntStateOf(0) }
+    fun flash(kind: String, side: Int = 0) {
+        gestureFlash = kind
+        gestureFlashSide = side
+        gestureFlashVersion++
+    }
+    LaunchedEffect(gestureFlashVersion) {
+        if (gestureFlash != null) {
+            delay(550)
+            gestureFlash = null
+        }
+    }
     var controlsVisible by remember { mutableStateOf(true) }
     LaunchedEffect(controlsVisible, isPlaying, pip, gestureScrubbing, draggingSeek, pressBoostOriginal) {
         if (controlsVisible && isPlaying && !pip && currentError == null &&
@@ -394,6 +409,7 @@ fun PlayerScreen(
         onDispose {
             pressBoostOriginal?.let { player.setPlaybackSpeed(it) }
             pressBoostOriginal = null
+            pressBoostSide = 0
             player.removeListener(listener)
         }
     }
@@ -483,8 +499,13 @@ fun PlayerScreen(
                             detectTapGestures(
                                 onTap = {
                                     // Single tap controls playback, not UI opacity.
-                                    if (player.isPlaying) player.pause() else player.play()
-                                    controlsVisible = true
+                                    if (player.isPlaying) {
+                                        player.pause()
+                                        flash("pause")
+                                    } else {
+                                        player.play()
+                                        flash("play")
+                                    }
                                 },
                                 onDoubleTap = { offset ->
                                     val deltaMs = when {
@@ -498,17 +519,17 @@ fun PlayerScreen(
                                             .coerceAtMost(if (duration > 0L) duration
                                                 else Long.MAX_VALUE)
                                         player.seekTo(target)
+                                        flash("skip", if (deltaMs > 0) 1 else -1)
                                     }
-                                    controlsVisible = true
                                 },
                                 onLongPress = { offset ->
                                     val onSide = offset.x < size.width * .38f ||
                                         offset.x > size.width * .62f
                                     if (onSide && pressBoostOriginal == null) {
                                         pressBoostOriginal = player.playbackParameters.speed
+                                        pressBoostSide = if (offset.x < size.width / 2f) -1 else 1
                                         player.setPlaybackSpeed(2f)
                                         if (!player.isPlaying) player.play()
-                                        controlsVisible = true
                                     }
                                 },
                                 onPress = {
@@ -521,6 +542,7 @@ fun PlayerScreen(
                                             player.setPlaybackSpeed(previous)
                                         }
                                         pressBoostOriginal = null
+                                        pressBoostSide = 0
                                     }
                                 }
                             )
@@ -549,14 +571,40 @@ fun PlayerScreen(
                 style = MaterialTheme.typography.bodyMedium
             )
         }
+        if (!pip && gestureFlash != null) {
+            val direction = gestureFlashSide
+            Box(
+                Modifier.align(when {
+                    direction < 0 -> Alignment.CenterStart
+                    direction > 0 -> Alignment.CenterEnd
+                    else -> Alignment.Center
+                }).padding(horizontal = 24.dp)
+                    .background(Color.Black.copy(alpha = .24f), CircleShape)
+                    .padding(horizontal = 11.dp, vertical = 8.dp)
+            ) {
+                when (gestureFlash) {
+                    "play" -> Icon(Icons.Outlined.PlayArrow, "播放", tint = Color.White.copy(alpha=.9f),
+                        modifier = Modifier.size(27.dp))
+                    "pause" -> Icon(Icons.Outlined.Pause, "暂停", tint = Color.White.copy(alpha=.9f),
+                        modifier = Modifier.size(27.dp))
+                    "skip" -> Text(
+                        if (direction < 0) "−10s" else "+10s",
+                        color = Color.White.copy(alpha = .9f),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+        }
         if (!pip && pressBoostOriginal != null) {
             Text(
-                "2× 倍速播放 · 松手恢复",
-                modifier = Modifier.align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium
+                "2×",
+                modifier = Modifier.align(
+                    if (pressBoostSide < 0) Alignment.CenterStart else Alignment.CenterEnd
+                ).padding(horizontal = 22.dp)
+                    .background(Color.Black.copy(alpha = .20f), CircleShape)
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                color = Color.White.copy(alpha = .88f),
+                style = MaterialTheme.typography.labelMedium
             )
         }
         if (!pip && (controlsVisible || currentError != null)) {
