@@ -7,7 +7,7 @@ import com.yagay.supjav.model.VideoServer
 object PlaybackQueuePolicy {
     fun snapshot(items: List<VideoItem>, active: VideoItem? = null): List<VideoItem> {
         val page = items.filter { it.id.isNotBlank() && it.detailUrl.isNotBlank() }
-            .distinctBy { it.id }.take(200)
+            .distinctBy { it.id }
         return if (active != null && page.none { it.id == active.id }) {
             page + active
         } else page
