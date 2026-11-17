@@ -158,6 +158,8 @@ fun FeedScreen(
         try {
             val response = app.source.listPage(kind, value, targetPage, cursor)
             val oldCount = data.size
+            val previousIds = if (forceRefresh) data.mapTo(HashSet()) { it.id }
+                else emptySet()
             val knownIds = (if (forceRefresh) emptyList() else data)
                 .mapTo(HashSet<String>(oldCount + response.items.size)) { it.id }
             val unseen = response.items.filter { knownIds.add(it.id) }
@@ -173,6 +175,9 @@ fun FeedScreen(
                 pageState.duplicatePageStreak = 0
                 pageState.endReached = false
                 if (data.isNotEmpty()) grid.scrollToItem(0)
+                val newCount = unseen.count { it.id !in previousIds }
+                pageState.notice = if (newCount > 0)
+                    "刷新完成 · 新增 $newCount 部" else "刷新完成 · 暂无新作品"
             } else {
                 data.addAll(unseen)
                 pageState.page = targetPage
@@ -207,6 +212,9 @@ fun FeedScreen(
             throw e
         } catch (e: Exception) {
             pageState.error = e.message?.take(160) ?: "加载失败，请重试"
+            if (forceRefresh && data.isNotEmpty()) {
+                pageState.notice = "刷新失败 · 已保留原列表"
+            }
             com.yagay.supjav.util.Diagnostics.log(
                 "FEED_PAGE_FAILED kind=${kind.name} page=$targetPage" +
                     " error=${e.javaClass.simpleName}"
@@ -225,6 +233,12 @@ fun FeedScreen(
         } else if (pageState.lastRefreshKey != refreshKey) {
             pageState.lastRefreshKey = refreshKey
             loadMore(forceRefresh = true)
+        }
+    }
+    LaunchedEffect(pageState, pageState.notice) {
+        if (pageState.notice != null) {
+            kotlinx.coroutines.delay(2_200)
+            pageState.notice = null
         }
     }
     DisposableEffect(grid, pageState) {
@@ -290,6 +304,19 @@ fun FeedScreen(
                             }
                         }
                     }
+                }
+            }
+            pageState.notice?.let { message ->
+                Surface(
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .padding(top = 6.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(18.dp),
+                    shadowElevation = 2.dp
+                ) {
+                    Text(message, modifier = Modifier.padding(
+                        horizontal = 12.dp, vertical = 6.dp
+                    ), style = MaterialTheme.typography.labelSmall)
                 }
             }
             if (pageState.refreshing) {
