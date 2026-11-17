@@ -31,6 +31,37 @@ class SupjavServerAdaptersTest {
         assertTrue(result.candidates.first().url.endsWith("?token=signed&expires=123"))
     }
 
+    @Test fun evsHls2AndHls4AreTriedBeforeBlockedHls3() {
+        val url2 = "https://good.example.com/hls2/master.m3u8?signature=2"
+        val url4 = "https://backup.example.com/hls4/master.m3u8?signature=4"
+        val url3 = "https://blocked.example.com/hls3/master.txt?signature=3"
+        val html = """
+            <script>var links={
+              "hls3":"$url3","hls4":"$url4","hls2":"$url2"
+            }; jwplayer().setup({file:links.hls3});</script>
+        """.trimIndent()
+        val result = SupjavServerAdapters.extract(
+            SupjavLine.EVS, html, "https://evsishere.xyz/embed/current")
+        assertEquals(listOf(url2, url4, url3),
+            result.candidates.take(3).map { it.url })
+        assertEquals("hls2", result.candidateTags[url2])
+        assertEquals("hls4", result.candidateTags[url4])
+        assertEquals("hls3", result.candidateTags[url3])
+    }
+
+    @Test fun lucPackedVidhideConfigExposesMultipleSignedMasters() {
+        val url2 = "https://good.example.com/hls2/master.m3u8?token=l"
+        val url3 = "https://blocked.example.com/hls3/master.txt?token=l"
+        val packed = "eval(function(p,a,c,k,e,d){}(" +
+            "'0 1={2:\"3\",4:\"5\"}',10,6," +
+            "'var|links|hls2|$url2|hls3|$url3'.split('|')))"
+        val output = SupjavServerAdapters.unpackPacker(packed)
+        assertTrue(output.orEmpty().contains(url2))
+        val result = SupjavServerAdapters.extract(SupjavLine.LUC,
+            "<script>$packed</script>", "https://luminscdn.xyz/e/video")
+        assertEquals(listOf(url2,url3), result.candidates.take(2).map { it.url })
+    }
+
     @Test fun fstLinksPrioritizeDeclaredHlsAndResolveRelativeTxt() {
         val html = """
             <script>

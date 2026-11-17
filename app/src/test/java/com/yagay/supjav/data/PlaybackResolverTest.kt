@@ -49,6 +49,24 @@ class PlaybackResolverTest {
         assertEquals(listOf(wrapper), fake.fetched)
     }
 
+    @Test fun blockedHls2FallsThroughToWorkingHls4() = runBlocking {
+        val fake = FakeGateway()
+        val embed = "https://evsishere.xyz/embed/video"
+        val hls2 = "https://blocked.example.com/hls2/master.m3u8?s=1"
+        val hls4 = "https://good.example.com/hls4/master.m3u8?s=2"
+        val hls3 = "https://blocked.example.com/hls3/master.txt?s=3"
+        fake.pages[embed] = GatewayPage(embed, 200, "text/html",
+            "<script>var links={hls3:'$hls3',hls4:'$hls4',hls2:'$hls2'};</script>")
+        fake.probes[hls2] = MediaProbe(false,403,null,"http")
+        fake.probes[hls4] = MediaProbe(true,200,hls4,"hls-ok")
+        fake.probes[hls3] = MediaProbe(false,403,null,"http")
+        val result = PlaybackResolver(SupjavSource()).apply {
+            gateway = fake
+        }.resolve(VideoServer("0","EVS",embed,detail))
+        assertTrue(result is ResolveResult.Playable)
+        assertEquals(hls4,(result as ResolveResult.Playable).source.url)
+    }
+
     @Test fun vasApiUsesPlayerJsonAndPreservesReferer() = runBlocking {
         val fake = FakeGateway()
         val embed = "https://vvaassjjav.xyz/e/abc123?lang=en"
