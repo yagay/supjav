@@ -420,6 +420,11 @@ fun PlayerScreen(
     onShowLinePicker: () -> Unit = {},
     onShowPartPicker: () -> Unit = {},
     onShowPlaylist: () -> Unit = {},
+    onPreviousVideo: () -> Unit = {},
+    onNextVideo: () -> Unit = {},
+    hasPreviousVideo: Boolean = false,
+    hasNextVideo: Boolean = false,
+    playlistSwitching: Boolean = false,
     onSelectPart: (String) -> Unit = {},
     availableParts: List<String> = emptyList(),
     activePart: String? = null,
@@ -989,14 +994,20 @@ fun PlayerScreen(
                     ) {
                         // Symmetric space keeps transport centered while
                         // the two trailing icons remain on the right.
-                        if (!compact) Spacer(Modifier.width(80.dp))
                         Spacer(Modifier.weight(1f))
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(
-                                modifier = Modifier.size(if (compact) 38.dp else 44.dp),
+                                modifier = Modifier.size(if (compact) 30.dp else 36.dp),
+                                enabled = hasPreviousVideo && !playlistSwitching,
+                                onClick = onPreviousVideo
+                            ) {
+                                Icon(Icons.Outlined.SkipPrevious, "上一部", tint = Color.White)
+                            }
+                            IconButton(
+                                modifier = Modifier.size(if (compact) 34.dp else 40.dp),
                                 onClick = {
                                     player.seekTo((player.currentPosition - skipMs)
                                         .coerceAtLeast(0L))
@@ -1020,7 +1031,7 @@ fun PlayerScreen(
                                 )
                             }
                             IconButton(
-                                modifier = Modifier.size(if (compact) 38.dp else 44.dp),
+                                modifier = Modifier.size(if (compact) 34.dp else 40.dp),
                                 onClick = {
                                     player.seekTo((player.currentPosition + skipMs)
                                         .coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE))
@@ -1029,6 +1040,13 @@ fun PlayerScreen(
                                 if (skipSeconds == 10) Icon(Icons.Outlined.Forward10,
                                     "快进10秒", tint = Color.White)
                                 else Text("+" + skipSeconds + "s", color = Color.White)
+                            }
+                            IconButton(
+                                modifier = Modifier.size(if (compact) 30.dp else 36.dp),
+                                enabled = hasNextVideo && !playlistSwitching,
+                                onClick = onNextVideo
+                            ) {
+                                Icon(Icons.Outlined.SkipNext, "下一部", tint = Color.White)
                             }
                         }
                         if (!compact) Spacer(Modifier.weight(1f))
