@@ -205,6 +205,26 @@ class BrowserHlsDocumentTest {
         assertEquals(1, Regex("""id="playlist"""").findAll(html).count())
     }
 
+
+    @Test fun playlistPreviousAndNextStaySeparateFromTimeSeeking() {
+        val html = requireNotNull(BrowserHlsDocument.render(
+            PlaybackSource(
+                "https://cdn.example.com/hls/master.m3u8",
+                "application/x-mpegURL", "https://evsishere.xyz/embed/a"
+            ),
+            hasPreviousVideo = true, hasNextVideo = false
+        ))
+        assertTrue(html.contains("id=\"previousVideo\""))
+        assertTrue(html.contains("id=\"nextVideo\""))
+        assertTrue(html.contains("state('queue-previous')"))
+        assertTrue(html.contains("state('queue-next')"))
+        assertTrue(html.contains("state('playlist')"))
+        assertTrue(html.contains("state('lines')"))
+        assertTrue(html.contains("id=\"back10\""))
+        assertTrue(html.contains("id=\"forward10\""))
+        assertTrue(html.contains("id=\"nextVideo\" aria-label=\"下一部\" disabled"))
+    }
+
     @Test fun rejectsMp4AndUnsafeHosts() {
         assertNull(BrowserHlsDocument.render(PlaybackSource(
             "https://media.example.com/a.mp4", "video/mp4",
