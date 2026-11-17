@@ -47,7 +47,8 @@ import kotlinx.coroutines.withContext
 fun RecommendPage(
     app: SupjavApp, onVideo: (VideoItem) -> Unit,
     onSearch: () -> Unit, refreshKey: Int,
-    onBrowse: (FeedKind, String) -> Unit = { _, _ -> }
+    onBrowse: (FeedKind, String) -> Unit = { _, _ -> },
+    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
 ) {
     // The shortcuts come from real website navigation discovered previously,
     // never hardcoded category names or invented home-page recommendations.
@@ -85,12 +86,16 @@ fun RecommendPage(
                 }
             }
         }
-        FeedScreen(app, FeedKind.LATEST, "", onVideo, refreshKey)
+        FeedScreen(app, FeedKind.LATEST, "", onVideo, refreshKey,
+            onPlaylistCaptured = onPlaylistCaptured)
     }
 }
 
 @Composable
-fun RankPage(app: SupjavApp, onVideo: (VideoItem) -> Unit) {
+fun RankPage(
+    app: SupjavApp, onVideo: (VideoItem) -> Unit,
+    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
+) {
     var selected by rememberSaveableRank() 
     val ranks = listOf(FeedKind.DAY, FeedKind.WEEK, FeedKind.MONTH)
     Column(Modifier.fillMaxSize()) {
@@ -109,7 +114,8 @@ fun RankPage(app: SupjavApp, onVideo: (VideoItem) -> Unit) {
                 ) { Text(listOf("日榜", "周榜", "月榜")[index]) }
             }
         }
-        FeedScreen(app, ranks[selected], "", onVideo)
+        FeedScreen(app, ranks[selected], "", onVideo,
+            onPlaylistCaptured = onPlaylistCaptured)
     }
 }
 
@@ -122,7 +128,8 @@ fun MinePage(
     app: SupjavApp,
     onVideo: (VideoItem) -> Unit,
     onSettings: () -> Unit,
-    revision: Int = 0
+    revision: Int = 0,
+    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
 ) {
     var watched by remember { mutableStateOf(emptyList<VideoItem>()) }
     var saved by remember { mutableStateOf(emptyList<VideoItem>()) }
@@ -192,7 +199,10 @@ fun MinePage(
             }
         } else {
             gridItems(selectedList, key = { it.id }) { video ->
-                VideoTile(video, onClick = { onVideo(video) }, app = app)
+                VideoTile(video, onClick = {
+                    onPlaylistCaptured(selectedList.toList())
+                    onVideo(video)
+                }, app = app)
             }
         }
     }
