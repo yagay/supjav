@@ -54,6 +54,16 @@ class NativeMediaCandidateVerifierTest {
             (result as NativeMediaCandidateVerifier.Result.Rejected).reason)
     }
 
+    @Test fun verifiedGetWithoutOriginMustKeepSameModeInMedia3Source() = runBlocking {
+        val gateway = FakeGateway(MediaProbe(
+            playable = true, status = 200, finalUrl = manifest.url,
+            reason = "hls-ok", includeOrigin = false
+        ))
+        val result = NativeMediaCandidateVerifier(gateway).verify(manifest)
+        assertTrue(result is NativeMediaCandidateVerifier.Result.Ready)
+        assertFalse((result as NativeMediaCandidateVerifier.Result.Ready).source.includeOrigin)
+    }
+
     @Test fun unsafeUrlIsRejectedBeforeAnyNetworkRequest() = runBlocking {
         val gateway = FakeGateway(MediaProbe(true, 200, manifest.url, "hls-ok"))
         val unsafe = manifest.copy(url = "https://127.0.0.1/master.m3u8")

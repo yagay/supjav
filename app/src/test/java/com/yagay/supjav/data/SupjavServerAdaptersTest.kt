@@ -61,6 +61,19 @@ class SupjavServerAdaptersTest {
             "<div id=robotlink>https://streamtape.com/get_video?id=DECOY</div>"))
     }
 
+    @Test fun streamtapeQuerySelectorAndSliceVariantsPreserveRealToken() {
+        val html = """
+            <div id="robotlink">//streamtape.com/get_video?id=DECOY</div>
+            <script>document.querySelector('#robotlink').innerHTML =
+            '//streamtape.com/get_' +
+            ('xcdvideo?id=ABC&token=REAL').slice(2).substr(1);</script>
+        """.trimIndent()
+        assertEquals(
+            "https://streamtape.com/get_video?id=ABC&token=REAL",
+            SupjavServerAdapters.streamtapeDeclaredSource(html)
+        )
+    }
+
     @Test fun voeJsonConfigurationTakesPriorityOverDecoy() {
         val url = "https://cdn.example.com/hls/master.m3u8?token=real"
         val config = """{"source":"$url"}"""

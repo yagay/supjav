@@ -144,7 +144,10 @@ class PlaybackResolver(private val source: SupjavSource) {
                 if (line == SupjavLine.ST) {
                     Diagnostics.log("RESOLVE_ST_PAGE host=" + URI(page.url).host +
                         " candidateCount=" + candidates.size +
-                        " embeddedFrames=" + result.nextPages.size)
+                        " embeddedFrames=" + result.nextPages.size +
+                        " robotlinkMarkup=" + page.body.contains("robotlink", true) +
+                        " playerScriptResolved=" +
+                        (SupjavServerAdapters.streamtapeDeclaredSource(page.body) != null))
                 }
 
                 // VAS exposes a same-origin public player API, not a prebuilt HLS link.
