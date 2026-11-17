@@ -240,9 +240,15 @@ private fun Root(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 SupjavHeader(tab.title, actions = {
-                    if (tab == SupjavTab.RECOMMEND || tab == SupjavTab.NEW) {
-                        IconButton(onClick = { refreshKey++ }) {
-                            Icon(Icons.Outlined.Refresh, "刷新列表")
+                    if (activeSearchValue.isNotBlank() ||
+                        tab == SupjavTab.RECOMMEND || tab == SupjavTab.NEW) {
+                        IconButton(onClick = {
+                            // A search owns its own feed revision: updating only
+                            // the home revision previously did not refresh it.
+                            if (activeSearchValue.isNotBlank()) searchRevision++
+                            else refreshKey++
+                        }) {
+                            Icon(Icons.Outlined.Refresh, "刷新当前列表")
                         }
                     }
                 })
