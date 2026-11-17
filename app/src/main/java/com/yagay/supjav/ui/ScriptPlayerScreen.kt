@@ -261,7 +261,8 @@ fun ScriptPlayerScreen(
                         val rootProbe = object : Runnable {
                             var attempts = 0
                             override fun run() {
-                                if (!alive.get()) return
+                                if (!alive.get() || attempts >= 14) return
+                                attempts++
                                 if (selected.get()) {
                                     evaluateJavascript("""
                                         (function() {
@@ -282,14 +283,13 @@ fun ScriptPlayerScreen(
                                             val host = Uri.parse(frame).host.orEmpty()
                                             val trusted = if (frame.isNotBlank())
                                                 session.trustFrame(server.detailUrl, frame) else false
-                                            if (attempts < 4 || (host.isNotBlank() &&
+                                            if (attempts <= 4 || (host.isNotBlank() &&
                                                     reportedFrames.add("root>" + host))) {
                                                 Diagnostics.log("WEB_ROOT_PROBE line=" + server.name +
                                                     " frames=" + obj.optInt("count") +
                                                     " playerHost=" + host +
                                                     " trusted=" + trusted)
                                             }
-                                            attempts++
                                         }
                                     }
                                 }
