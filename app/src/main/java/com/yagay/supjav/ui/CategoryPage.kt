@@ -37,7 +37,8 @@ fun CategoryPage(
     app: SupjavApp,
     onVideo: (VideoItem) -> Unit,
     initialKind: FeedKind? = null,
-    initialPath: String = ""
+    initialPath: String = "",
+    directoryFilter: String = ""
 ) {
     var directory by remember { mutableStateOf(app.categoryStore.snapshot()) }
     var pinned by remember { mutableStateOf(app.categoryStore.pins().toSet()) }
@@ -49,7 +50,7 @@ fun CategoryPage(
     var selectedKind by remember { mutableStateOf<FeedKind?>(null) }
     var selectedPath by rememberSaveable { mutableStateOf("") }
     var selectedTitle by rememberSaveable { mutableStateOf("") }
-    var filter by rememberSaveable { mutableStateOf("") }
+    // Directory filtering shares the page's inline search field.
 
     LaunchedEffect(initialKind, initialPath) {
         if (initialKind != null && initialPath.isNotBlank()) {
@@ -110,15 +111,6 @@ fun CategoryPage(
     }
 
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = filter,
-            onValueChange = { filter = it },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-            leadingIcon = { Icon(Icons.Outlined.Search, null) },
-            placeholder = { Text("筛选分类、标签、演员或制作商") },
-            singleLine = true,
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-        )
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 4.dp),
@@ -187,8 +179,9 @@ fun CategoryPage(
         }
         val results = directory.filter {
             it.kind == chosenKind &&
-                (filter.isBlank() || it.label.contains(filter.trim(), ignoreCase = true) ||
-                    it.path.contains(filter.trim(), ignoreCase = true))
+                (directoryFilter.isBlank() ||
+                    it.label.contains(directoryFilter.trim(), ignoreCase = true) ||
+                    it.path.contains(directoryFilter.trim(), ignoreCase = true))
         }
         if (!fetching && results.isEmpty()) {
             SupjavEmptyState(if (directory.isEmpty()) {

@@ -42,6 +42,8 @@ import com.yagay.supjav.data.SupjavLine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private var inPip by mutableStateOf(false)
@@ -150,8 +152,33 @@ private fun Root(
     var libraryRevision by remember { mutableIntStateOf(0) }
     var targetCategoryKind by remember { mutableStateOf<FeedKind?>(null) }
     var targetCategoryPath by remember { mutableStateOf("") }
-    var targetSearchKind by remember { mutableStateOf(FeedKind.SEARCH) }
-    var targetSearchValue by remember { mutableStateOf("") }
+    // Search is an inline part of each page; it never changes the main tab.
+    var searchInput by rememberSaveable { mutableStateOf("") }
+    var searchKind by rememberSaveable { mutableStateOf(FeedKind.SEARCH) }
+    var activeSearchValue by rememberSaveable { mutableStateOf("") }
+    var activeSearchKind by rememberSaveable { mutableStateOf(FeedKind.SEARCH) }
+    var searchRevision by remember { mutableIntStateOf(0) }
+    var recentSearches by remember { mutableStateOf(emptyList<String>()) }
+    LaunchedEffect(app) {
+        recentSearches = withContext(Dispatchers.IO) { app.searchStore.recent() }
+    }
+    fun clearSearch() {
+        activeSearchValue = ""
+        searchInput = ""
+    }
+    fun submitSearch(raw: String, kind: FeedKind) {
+        val term = raw.trim()
+        if (term.isEmpty()) return
+        activeSearchValue = term
+        activeSearchKind = kind
+        searchInput = term
+        searchRevision++
+        if (kind == FeedKind.SEARCH) {
+            recentSearches = (listOf(term) +
+                recentSearches.filterNot { it.equals(term, ignoreCase = true) }).take(20)
+            scope.launch(Dispatchers.IO) { app.searchStore.add(term) }
+        }
+    }
 
     SideEffect { onPlayerVisibility(showPlayer) }
     val onOpen: (VideoItem) -> Unit = { video ->
@@ -191,11 +218,16 @@ private fun Root(
                 showPlayer = false
             }
             routes.isNotEmpty() -> { routes.removeAt(routes.lastIndex); libraryRevision++ }
-            tab != SupjavTab.RECOMMEND -> tab = SupjavTab.RECOMMEND
+            activeSearchValue.isNotBlank() -> clearSearch()
+            tab != SupjavTab.RECOMMEND -> {
+                clearSearch()
+                tab = SupjavTab.RECOMMEND
+            }
         }
     }
     BackHandler(enabled = linePickerOpen || showSettings || webServer != null || showPlayer ||
-        routes.isNotEmpty() || tab != SupjavTab.RECOMMEND) { back() }
+        routes.isNotEmpty() || activeSearchValue.isNotBlank() ||
+        tab != SupjavTab.RECOMMEND) { back() }
 
     if (inPip) {
         PlayerScreen(app, true, onPip, { showPlayer = false })
@@ -207,49 +239,75 @@ private fun Root(
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                if (tab != SupjavTab.SEARCH) {
-                    SupjavHeader(tab.title, actions = {
-                        if (tab == SupjavTab.RECOMMEND || tab == SupjavTab.NEW) {
-                            IconButton(onClick = { refreshKey++ }) {
-                                Icon(Icons.Outlined.Refresh, "刷新列表")
-                            }
+                SupjavHeader(tab.title, actions = {
+                    if (tab == SupjavTab.RECOMMEND || tab == SupjavTab.NEW) {
+                        IconButton(onClick = { refreshKey++ }) {
+                            Icon(Icons.Outlined.Refresh, "刷新列表")
                         }
-                        if (tab == SupjavTab.RECOMMEND) {
-                            IconButton(onClick = { tab = SupjavTab.SEARCH }) {
-                                Icon(Icons.Outlined.Search, "搜索")
-                            }
-                        }
-                    })
-                }
+                    }
+                })
             },
             bottomBar = {
-                SupjavPrimaryNavigation(tab) { selected -> tab = selected }
+                SupjavPrimaryNavigation(tab) { selected ->
+                    if (tab != selected) {
+                        clearSearch()
+                        searchKind = FeedKind.SEARCH
+                        tab = selected
+                    }
+                }
             }
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
-                holder.SaveableStateProvider(tab.name) {
-                    when (tab) {
-                        SupjavTab.RECOMMEND -> RecommendPage(
-                            app, onOpen,
-                            onSearch = { tab = SupjavTab.CATEGORY },
-                            refreshKey = refreshKey
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                key(tab) {
+                    InlineSearchBar(
+                        query = searchInput,
+                        onQueryChange = { searchInput = it },
+                        kind = searchKind,
+                        onKindChange = { searchKind = it },
+                        activeValue = activeSearchValue,
+                        activeKind = activeSearchKind,
+                        recent = recentSearches,
+                        onSubmit = ::submitSearch,
+                        onClear = ::clearSearch,
+                        onRecent = { submitSearch(it, FeedKind.SEARCH) },
+                        onClearRecent = {
+                            recentSearches = emptyList()
+                            scope.launch(Dispatchers.IO) { app.searchStore.clear() }
+                        }
+                    )
+                }
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    if (activeSearchValue.isNotBlank()) {
+                        FeedScreen(
+                            app, activeSearchKind, activeSearchValue, onOpen,
+                            refreshKey = searchRevision
                         )
-                        SupjavTab.CATEGORY -> CategoryPage(
-                            app = app,
-                            onVideo = onOpen,
-                            initialKind = targetCategoryKind,
-                            initialPath = targetCategoryPath
-                        )
-                        SupjavTab.RANK -> RankPage(app, onOpen)
-                        SupjavTab.NEW -> NewReleasesPage(app, onOpen, refreshKey)
-                        SupjavTab.MINE -> MinePage(
-                            app, onOpen,
-                            onSettings = { showSettings = true },
-                            revision = libraryRevision
-                        )
-                        SupjavTab.SEARCH -> SearchPage(
-                            app, onOpen, targetSearchKind, targetSearchValue
-                        )
+                    } else {
+                        holder.SaveableStateProvider(tab.name) {
+                            when (tab) {
+                                SupjavTab.RECOMMEND -> RecommendPage(
+                                    app, onOpen,
+                                    onSearch = {
+                                        clearSearch()
+                                        tab = SupjavTab.CATEGORY
+                                    },
+                                    refreshKey = refreshKey
+                                )
+                                SupjavTab.CATEGORY -> CategoryPage(
+                                    app = app, onVideo = onOpen,
+                                    initialKind = targetCategoryKind,
+                                    initialPath = targetCategoryPath,
+                                    directoryFilter = searchInput
+                                )
+                                SupjavTab.RANK -> RankPage(app, onOpen)
+                                SupjavTab.NEW -> NewReleasesPage(app, onOpen, refreshKey)
+                                SupjavTab.MINE -> MinePage(
+                                    app, onOpen,
+                                    onSettings = { showSettings = true },
+                                    revision = libraryRevision
+                                )
+                            }
+                        }
                     }
                 }
             }
