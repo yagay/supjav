@@ -40,7 +40,7 @@ fun CategoryPage(
     initialPath: String = "",
     directoryFilter: String = "",
     onBackActionChanged: ((() -> Unit)?) -> Unit = {},
-    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
+    onPlaylistCaptured: (List<VideoItem>, com.yagay.supjav.data.PlaylistPageSource?) -> Unit = { _, _ -> }
 ) {
     var directory by remember { mutableStateOf(app.categoryStore.snapshot()) }
     var pinned by remember { mutableStateOf(app.categoryStore.pins().toSet()) }
