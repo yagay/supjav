@@ -231,6 +231,9 @@ internal object BrowserHlsDocument {
                 }
               }
               function clearGesture(){
+                if(activeGesture && activeGesture.seeking){
+                  scrubbing=false;tick();
+                }
                 activeGesture=null;
                 restoreHold();
               }
@@ -239,6 +242,13 @@ internal object BrowserHlsDocument {
                 var box=gestureLayer.getBoundingClientRect();
                 var x=e.clientX-box.left,y=e.clientY-box.top;
                 var side=gestureSide(x,box.width);
+                // A second press must not fire the pending single-tap
+                // pause while the user is double-tapping or holding.
+                if(lastTap && side===lastTap.side &&
+                   Date.now()-lastTap.time<=330){
+                  clearTimeout(singleTapTimer);
+                  singleTapTimer=null;
+                }
                 activeGesture={id:e.pointerId,x:x,y:y,dx:0,dy:0,
                   width:box.width,height:box.height,side:side,
                   seeking:false,moved:false,holding:false,
