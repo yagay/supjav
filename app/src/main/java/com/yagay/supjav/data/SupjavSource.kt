@@ -373,8 +373,18 @@ class SupjavSource {
             val part = inferServerPart(el)
             Triple(label, link, part)
         }.distinctBy { it.second }
-        if (entries.isNotEmpty()) return entries.mapIndexed { index, (label, link, part) ->
-            VideoServer(index.toString(), label, link, detailUrl, part = part)
+        if (entries.isNotEmpty()) {
+            val servers = entries.mapIndexed { index, (label, link, part) ->
+                VideoServer(index.toString(), label, link, detailUrl, part = part)
+            }
+            val grouped = VideoParts.groupRepeatedProviderSets(servers)
+            val parts = VideoParts.available(grouped)
+            Diagnostics.log("DETAIL_SERVER_GROUPS servers=" + grouped.size +
+                " parts=" + parts.size + " perPart=" +
+                parts.joinToString(",") { part ->
+                    part + ":" + grouped.count { VideoParts.partOf(it) == part }
+                } + " inferred=" + (grouped !== servers))
+            return grouped
         }
         return doc.select(
             "iframe#video[src], #player-wrap iframe[src], iframe#player[src]"
