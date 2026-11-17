@@ -22,8 +22,7 @@ class PlaybackResolver(private val source: SupjavSource) {
             }
             Diagnostics.log("RESOLVE_START server=" + server.name + " entry=" +
                 entryType + " chars=" + server.link.length)
-            val start = startingUrl(server)
-            if (start == null) {
+            val start: String = startingUrl(server) ?: run {
                 Diagnostics.log("RESOLVE_UNSUPPORTED_ENTRY server=" + server.name +
                     " entry=" + entryType + " chars=" + server.link.length)
                 return@withContext ResolveResult.Unavailable(
