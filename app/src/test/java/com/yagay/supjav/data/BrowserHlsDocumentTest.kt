@@ -36,7 +36,7 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("id=\"rotate\""))
         assertTrue(html.contains("id=\"back\""))
         assertTrue(html.contains("timeupdate"))
-        assertTrue(html.contains("double") || html.contains("lastTapSide"))
+        assertTrue(html.contains("lastTap && now-lastTap.time<=330"))
         assertTrue(html.contains("speedList = [0.75,1,1.25,1.5,2]") ||
             html.contains("speedList=[0.75,1,1.25,1.5,2]"))
         assertTrue(html.contains("video.currentTime="))
