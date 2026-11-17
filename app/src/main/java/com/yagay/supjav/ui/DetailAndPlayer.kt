@@ -592,23 +592,11 @@ fun PlayerScreen(
                         .pointerInput(player, duration, skipSeconds, holdSpeed) {
                             detectTapGestures(
                                 onTap = {
-                                    when (PlayerTapPolicy.onSurfaceTap(
-                                        controlsVisible, player.playWhenReady
-                                    )) {
-                                        PlayerTapPolicy.Action.REVEAL -> {
-                                            // The first tap reveals the whole control layer
-                                            // and progress, without changing playback.
-                                            controlsVisible = true
-                                        }
-                                        PlayerTapPolicy.Action.PAUSE -> {
-                                            player.pause()
-                                            controlsVisible = true
-                                        }
-                                        PlayerTapPolicy.Action.RESUME -> {
-                                            player.play()
-                                            flash("play")
-                                            controlsVisible = true
-                                        }
+                                    controlsVisible = when (
+                                        PlayerTapPolicy.onSurfaceTap(controlsVisible)
+                                    ) {
+                                        PlayerTapPolicy.Action.SHOW -> true
+                                        PlayerTapPolicy.Action.HIDE -> false
                                     }
                                 },
                                 onDoubleTap = { offset ->
