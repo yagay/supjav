@@ -107,10 +107,18 @@ fun DetailScreen(
                         onPlay()
                     }
                     is ResolveResult.Unavailable -> {
-                        failedServer = server
-                        playbackError = result.reason
                         Diagnostics.log("PLAY_SOURCE_UNAVAILABLE video=" + video.id +
                             " line=" + server.name + " reason=" + result.reason)
+                        val scripted = result.reason.contains("网页脚本入口") ||
+                            result.reason.contains("需要 JavaScript")
+                        if (scripted && app.preferences.getBoolean("auto_web_fallback", true)) {
+                            Diagnostics.log("PLAY_AUTO_WEB video=" + video.id +
+                                " line=" + server.name)
+                            onWebPlay(server)
+                        } else {
+                            failedServer = server
+                            playbackError = result.reason
+                        }
                     }
                     ResolveResult.VerificationRequired -> {
                         failedServer = server

@@ -91,6 +91,9 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
     var background by remember { mutableStateOf(prefs.getBoolean("background", true)) }
     var autoPip by remember { mutableStateOf(prefs.getBoolean("auto_pip", false)) }
     var showPip by remember { mutableStateOf(prefs.getBoolean("manual_pip", true)) }
+    var autoWebFallback by remember {
+        mutableStateOf(prefs.getBoolean("auto_web_fallback", true))
+    }
     var confirmClear by remember { mutableStateOf(false) }
     var logError by remember { mutableStateOf<String?>(null) }
     var showLogs by remember { mutableStateOf(false) }
@@ -107,6 +110,15 @@ fun SettingsScreen(app: SupjavApp, dark: Boolean, onDark: (Boolean) -> Unit) {
         Surface(shape = RoundedCornerShape(SupjavMetrics.cardRadius),
             color = MaterialTheme.colorScheme.surface) {
             Column {
+                SupjavSettingToggle(
+                    "网页脚本线路自动兼容",
+                    "原生解析无法处理线路参数时，自动打开网站播放器并尝试识别 MP4/HLS",
+                    autoWebFallback
+                ) {
+                    autoWebFallback = it
+                    prefs.edit().putBoolean("auto_web_fallback", it).apply()
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 SupjavSettingToggle("后台播放",
                     "切换应用或熄屏时继续播放支持的媒体", background) {
                     background = it
