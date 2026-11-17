@@ -127,6 +127,8 @@ private fun Root(
     var showSettings by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var libraryRevision by remember { mutableIntStateOf(0) }
+    var targetCategoryKind by remember { mutableStateOf<FeedKind?>(null) }
+    var targetCategoryPath by remember { mutableStateOf("") }
     var targetSearchKind by remember { mutableStateOf(FeedKind.SEARCH) }
     var targetSearchValue by remember { mutableStateOf("") }
 
@@ -186,8 +188,14 @@ private fun Root(
                     when (tab) {
                         SupjavTab.RECOMMEND -> RecommendPage(
                             app, onOpen,
-                            onSearch = { tab = SupjavTab.SEARCH },
+                            onSearch = { tab = SupjavTab.CATEGORY },
                             refreshKey = refreshKey
+                        )
+                        SupjavTab.CATEGORY -> CategoryPage(
+                            app = app,
+                            onVideo = onOpen,
+                            initialKind = targetCategoryKind,
+                            initialPath = targetCategoryPath
                         )
                         SupjavTab.RANK -> RankPage(app, onOpen)
                         SupjavTab.NEW -> NewReleasesPage(app, onOpen, refreshKey)
@@ -222,9 +230,9 @@ private fun Root(
                                 onPlay = { showPlayer = true },
                                 onFilter = { kind, value ->
                                     routes.clear()
-                                    targetSearchKind = kind
-                                    targetSearchValue = value
-                                    tab = SupjavTab.SEARCH
+                                    targetCategoryKind = kind
+                                    targetCategoryPath = value
+                                    tab = SupjavTab.CATEGORY
                                 }
                             )
                         }
