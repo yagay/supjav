@@ -162,16 +162,23 @@ class SupjavSource {
 
     fun parseList(html: String, base: String = BASE): List<VideoItem> {
         val doc = Jsoup.parse(html, base)
-        val cards = doc.select(".posts .post, .post, article")
-        val elements: List<Element> = if (cards.isEmpty()) doc.select("a[href$=.html]") else cards
-        return elements.mapNotNull { card ->
-            val anchor = if (card.tagName() == "a") card
-                else card.selectFirst("a.img[href], h3 a[href], .post-title a[href], a[href$=.html]")
-            anchor ?: return@mapNotNull null
-            val url = anchor.absUrl("href").ifBlank { resolveUrl(base, anchor.attr("href")) }
+        // Some pages use one <article> to wrap an entire grid, while others
+        // render every item as .post or a linked thumbnail. Enumerate real
+        // detail anchors instead of taking only the first link per wrapper.
+        val main = doc.selectFirst(".posts, #posts, .post-list, .video-list, main")
+            ?: doc.body()
+        val selected = main.select("a[href]")
+            .ifEmpty { doc.select("a[href]") }
+        return selected.mapNotNull { anchor ->
+            val url = anchor.absUrl("href").ifBlank {
+                resolveUrl(base, anchor.attr("href"))
+            }
             if (!isSiteUrl(url)) return@mapNotNull null
-            val id = videoPattern.find(url)?.groupValues?.getOrNull(1) ?: return@mapNotNull null
-            val image = card.selectFirst("img") ?: anchor.selectFirst("img")
+            val id = videoPattern.find(url)?.groupValues?.getOrNull(1)
+                ?: return@mapNotNull null
+            val card = anchor.closest(".post, article, .video-item, .item, li")
+                ?: anchor.parent() ?: anchor
+            val image = anchor.selectFirst("img") ?: card.selectFirst("img")
             val cover = image?.let {
                 val raw = it.attr("data-original").ifBlank {
                     it.attr("data-src").ifBlank { it.attr("src") }
@@ -180,9 +187,11 @@ class SupjavSource {
             }.orEmpty()
             val title = anchor.attr("title").ifBlank {
                 card.selectFirst("h3, .post-title")?.text().orEmpty()
-            }.ifBlank { image?.attr("alt").orEmpty() }.ifBlank { anchor.text() }.ifBlank { id }
-            VideoItem(id = id, title = title, coverUrl = cover, detailUrl = url,
-                code = Regex("[A-Za-z]{2,8}[- ]?\\d{2,8}").find(title)?.value.orEmpty())
+            }.ifBlank { image?.attr("alt").orEmpty() }
+                .ifBlank { anchor.text() }.ifBlank { id }
+            VideoItem(id = id, title = title, coverUrl = cover,
+                detailUrl = url, code = Regex("[A-Za-z]{2,8}[- ]?\\d{2,8}")
+                    .find(title)?.value.orEmpty())
         }.distinctBy { it.id }
     }
 
