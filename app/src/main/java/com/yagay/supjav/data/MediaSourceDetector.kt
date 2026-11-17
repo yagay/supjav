@@ -69,8 +69,11 @@ class SelectedMediaSession(sitePage: String) {
         if (sourceOrigin !in trustedOrigins) return false
         if (frameOrigin == sourceOrigin) return true
         val path = runCatching { URI(frame).path.orEmpty().lowercase(Locale.US) }.getOrDefault("")
-        val recognized = sourceOrigin == siteOrigin ||
+        val recognized = if (sourceOrigin == siteOrigin) {
+            SitePlayerWrapper.isSiteWrapper(frame)
+        } else {
             Regex("^/(?:e|embed|player|v|supjav\\.php)(?:/|$)").containsMatchIn(path)
+        }
         if (!recognized || Regex("(?:advert|banner|popunder|preroll)").containsMatchIn(frame.lowercase(Locale.US))) {
             return false
         }
@@ -91,8 +94,11 @@ class SelectedMediaSession(sitePage: String) {
         if (childOrigin in trustedOrigins) return true
         val path = runCatching { URI(documentUrl).path.orEmpty().lowercase(Locale.US) }
             .getOrDefault("")
-        val allowed = Regex("^/(?:e|embed|player|v|supjav\\.php)(?:/|$)")
-            .containsMatchIn(path)
+        val allowed = if (parentOrigin == siteOrigin) {
+            SitePlayerWrapper.isSiteWrapper(documentUrl)
+        } else {
+            Regex("^/(?:e|embed|player|v|supjav\\.php)(?:/|$)").containsMatchIn(path)
+        }
         if (!allowed || Regex("advert|banner|popunder|preroll", RegexOption.IGNORE_CASE)
                 .containsMatchIn(documentUrl)) return false
         trustedOrigins.add(childOrigin)
@@ -107,14 +113,15 @@ class SelectedMediaSession(sitePage: String) {
     ): PlaybackSource? {
         val documentOrigin = MediaSourceDetector.origin(documentUrl) ?: return null
         if (documentOrigin != MediaSourceDetector.origin(reportedOrigin) ||
-            documentOrigin !in trustedOrigins) return null
+            documentOrigin !in trustedOrigins || documentOrigin == siteOrigin) return null
         return MediaSourceDetector.fromMediaUrl(mediaUrl, documentUrl)
     }
 
     @Synchronized
     fun fromNetworkRequest(mediaUrl: String, requestReferer: String?): PlaybackSource? {
         val ref = requestReferer ?: return null
-        if (MediaSourceDetector.origin(ref) !in trustedOrigins) return null
+        val refererOrigin = MediaSourceDetector.origin(ref)
+        if (refererOrigin !in trustedOrigins || refererOrigin == siteOrigin) return null
         return MediaSourceDetector.fromMediaUrl(mediaUrl, ref)
     }
 }
