@@ -31,6 +31,8 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("id=\"back10\""))
         assertTrue(html.contains("id=\"forward10\""))
         assertTrue(html.contains("id=\"speed\""))
+        assertTrue(html.contains("id=\"lines\""))
+        assertTrue(html.contains("state('lines')"))
         assertTrue(html.contains("id=\"rotate\""))
         assertTrue(html.contains("id=\"back\""))
         assertTrue(html.contains("timeupdate"))
