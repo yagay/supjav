@@ -987,11 +987,10 @@ fun PlayerScreen(
                         modifier = Modifier.fillMaxSize(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (compact) {
-                            Spacer(Modifier.weight(1f))
-                        } else {
-                            Spacer(Modifier.weight(1f))
-                        }
+                        // Symmetric space keeps transport centered while
+                        // the two trailing icons remain on the right.
+                        if (!compact) Spacer(Modifier.width(80.dp))
+                        Spacer(Modifier.weight(1f))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -1032,6 +1031,7 @@ fun PlayerScreen(
                                 else Text("+" + skipSeconds + "s", color = Color.White)
                             }
                         }
+                        if (!compact) Spacer(Modifier.weight(1f))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(0.dp),
                             verticalAlignment = Alignment.CenterVertically
