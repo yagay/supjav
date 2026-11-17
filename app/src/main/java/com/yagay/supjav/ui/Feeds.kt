@@ -238,7 +238,9 @@ fun FeedScreen(
     LaunchedEffect(pageState, pageState.pendingRefresh, pageState.loading) {
         if (pageState.pendingRefresh && !pageState.loading) {
             pageState.pendingRefresh = false
-            loadMore(forceRefresh = true)
+            // The effect keys include loading; the actual network job must
+            // outlive the effect's restart when loading changes to true.
+            scope.launch { loadMore(forceRefresh = true) }
         }
     }
     LaunchedEffect(pageState, refreshKey) {
@@ -269,7 +271,9 @@ fun FeedScreen(
     LaunchedEffect(pageState, lastVisible, pageState.loading, pageState.endReached, pageState.error) {
         if (data.isNotEmpty() && lastVisible >= data.size - 9 &&
             !pageState.loading && !pageState.endReached && pageState.error == null) {
-            loadMore()
+            // Keep the pagination job in the composable scope rather than
+            // this effect: changing loading/endReached otherwise cancels it.
+            scope.launch { loadMore() }
         }
     }
 
