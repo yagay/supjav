@@ -596,8 +596,13 @@ private fun Root(
                             lineSwitchError = null
                             partPickerOpen = true
                         },
+                        onSelectPart = { part ->
+                            VideoParts.forPart(availableServers, part, selectedServer)
+                                ?.let(::switchServer)
+                        },
                         availableParts = VideoParts.available(availableServers),
                         activePart = selectedServer?.let(VideoParts::partOf),
+                        partSwitching = switchingLine != null,
                         onWebFallback = webFallback?.let { candidate ->
                             {
                                 val resumeMs = app.playerEngine.player.currentPosition
@@ -671,6 +676,12 @@ private fun Root(
                                 onShowLinePicker = {
                                     lineSwitchError = null
                                     linePickerOpen = true
+                                },
+                                availableParts = VideoParts.available(availableServers),
+                                activePart = selectedServer?.let(VideoParts::partOf),
+                                onSelectPart = { part ->
+                                    VideoParts.forPart(availableServers, part, selectedServer)
+                                        ?.let(::switchServer)
                                 },
                                 autoEnterHls = autoOpenWebHls,
                                 webPlayback = app.webPlayback
