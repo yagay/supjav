@@ -11,11 +11,12 @@ import java.util.Base64
  * The signed media URL is base64 encoded so it cannot terminate a script.
  */
 internal object BrowserHlsDocument {
-    fun render(source: PlaybackSource): String? {
+    fun render(source: PlaybackSource, resumePositionMs: Long = 0L): String? {
         if (source.mimeType != "application/x-mpegURL" ||
             MediaSourceDetector.origin(source.url) == null ||
             MediaSourceDetector.origin(source.referer) == null) return null
         val encoded = Base64.getEncoder().encodeToString(source.url.toByteArray(Charsets.UTF_8))
+        val resumeSeconds = (resumePositionMs.coerceIn(0, 86_400_000) / 1000L)
         return """
             <!doctype html>
             <html lang="zh"><head><meta charset="UTF-8">
@@ -100,6 +101,8 @@ internal object BrowserHlsDocument {
               'use strict';
               var video = document.getElementById('video');
               var mediaUrl = atob('$encoded');
+              var pendingResumeSeconds = $resumeSeconds;
+              var lastProgressReport = 0;
               var chrome = document.getElementById('chrome');
               var play = document.getElementById('play');
               var current = document.getElementById('current');
@@ -112,6 +115,25 @@ internal object BrowserHlsDocument {
               var hideTimer = null, hintTimer = null, scrubbing = false;
               var speedList = [0.75,1,1.25,1.5,2], speedIndex = 1;
               function state(code){ console.log('SUPJAV_HLS_STATE:' + code); }
+              function reportProgress(force){
+                var now = Date.now();
+                if (!force && now-lastProgressReport<2500) return;
+                lastProgressReport = now;
+                var at = Math.max(0, Math.floor((video.currentTime||0)*1000));
+                var length = Number.isFinite(video.duration) && video.duration>0 ?
+                  Math.floor(video.duration*1000) : 0;
+                var playing = !video.paused && !video.ended ? 1 : 0;
+                console.log('SUPJAV_HLS_PROGRESS:'+at+':'+length+':'+playing);
+              }
+              function applyResume(){
+                if (pendingResumeSeconds<=0 || !Number.isFinite(video.duration)
+                  || video.duration<=0) return;
+                var target = Math.min(pendingResumeSeconds, video.duration-5);
+                pendingResumeSeconds=0;
+                if (target>0) {
+                  try { video.currentTime=target; } catch(e) {}
+                }
+              }
               function clock(value){
                 if(!isFinite(value) || value < 0) return '--:--';
                 var v = Math.floor(value), sec = String(v%60).padStart(2,'0');
@@ -193,19 +215,19 @@ internal object BrowserHlsDocument {
                 chromeVisible(chrome.classList.contains('hidden'));
               });
               video.addEventListener('play',function(){playbackIcon();chromeVisible(true);});
-              video.addEventListener('pause',function(){playbackIcon();chromeVisible(true);});
+              video.addEventListener('pause',function(){playbackIcon();chromeVisible(true);reportProgress(true);});
               video.addEventListener('playing',function(){
-                playbackIcon();spinner.classList.add('hide');state('playing');chromeVisible(true);
+                playbackIcon();spinner.classList.add('hide');state('playing');chromeVisible(true);reportProgress(true);
               });
               video.addEventListener('waiting',function(){
                 spinner.classList.remove('hide');state('buffering');
               });
               video.addEventListener('seeking',function(){spinner.classList.remove('hide');});
-              video.addEventListener('seeked',function(){playbackIcon();tick();});
-              video.addEventListener('timeupdate',tick);
+              video.addEventListener('seeked',function(){playbackIcon();tick();reportProgress(true);});
+              video.addEventListener('timeupdate',function(){tick();reportProgress(false);});
               video.addEventListener('durationchange',tick);
-              video.addEventListener('loadedmetadata',tick);
-              video.addEventListener('ended',function(){playbackIcon();chromeVisible(true);});
+              video.addEventListener('loadedmetadata',function(){applyResume();tick();});
+              video.addEventListener('ended',function(){playbackIcon();chromeVisible(true);reportProgress(true);});
               video.addEventListener('error',function(){spinner.classList.add('hide');state('video-error');message('视频播放失败');});
               document.addEventListener('visibilitychange',function(){
                 if(!document.hidden)tick();
