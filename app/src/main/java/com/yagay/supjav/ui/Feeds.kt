@@ -133,7 +133,8 @@ fun VideoTile(
 @Composable
 fun FeedScreen(
     app: SupjavApp, kind: FeedKind, value: String,
-    onVideo: (VideoItem) -> Unit, refreshKey: Int = 0
+    onVideo: (VideoItem) -> Unit, refreshKey: Int = 0,
+    onPlaylistCaptured: (List<VideoItem>) -> Unit = {}
 ) {
     // The cached feed survives tab/detail navigation. A refresh updates the
     // same list atomically instead of constructing an empty, new cache page.
@@ -313,7 +314,10 @@ fun FeedScreen(
             ) {
                 itemsIndexed(data, key = { _, video -> video.id }) { index, video ->
                     VideoTile(
-                        video, onClick = { onVideo(video) }, app = app,
+                        video, onClick = {
+                            onPlaylistCaptured(data.toList())
+                            onVideo(video)
+                        }, app = app,
                         rank = if (kind in setOf(FeedKind.DAY, FeedKind.WEEK, FeedKind.MONTH))
                             index + 1 else null
                     )
