@@ -272,17 +272,7 @@ private fun Root(
             exit = slideOutHorizontally(tween(250)) { it }
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column {
-                    if (!landscape) {
-                        SupjavHeader("正在播放", onBack = back, actions = {
-                            if (app.preferences.getBoolean("manual_pip", true)) {
-                                IconButton(onClick = onPip) {
-                                    Icon(Icons.Outlined.PictureInPictureAlt, "画中画")
-                                }
-                            }
-                        })
-                    }
-                    PlayerScreen(
+                PlayerScreen(
                         app, false, onPip,
                         onBack = { back() },
                         onWebFallback = webFallback?.let { candidate ->
@@ -295,7 +285,6 @@ private fun Root(
                             }
                         }
                     )
-                }
             }
         }
 
