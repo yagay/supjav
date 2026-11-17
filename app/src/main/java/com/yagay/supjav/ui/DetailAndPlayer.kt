@@ -336,6 +336,7 @@ fun DetailScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(
     app: SupjavApp,
