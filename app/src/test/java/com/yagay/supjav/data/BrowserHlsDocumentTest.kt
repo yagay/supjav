@@ -19,6 +19,29 @@ class BrowserHlsDocumentTest {
         assertTrue(html.contains("atob("))
     }
 
+    @Test fun mobileControlsAreInsideVideoLayerAndSupportSeekingAndSpeed() {
+        val source = PlaybackSource(
+            "https://cdn.example.com/hls2/master.m3u8?sig=abc",
+            "application/x-mpegURL",
+            "https://luminscdn.xyz/e/player"
+        )
+        val html = requireNotNull(BrowserHlsDocument.render(source))
+        assertTrue(html.contains("id=\"center\""))
+        assertTrue(html.contains("id=\"progress\""))
+        assertTrue(html.contains("id=\"back10\""))
+        assertTrue(html.contains("id=\"forward10\""))
+        assertTrue(html.contains("id=\"speed\""))
+        assertTrue(html.contains("id=\"rotate\""))
+        assertTrue(html.contains("id=\"back\""))
+        assertTrue(html.contains("timeupdate"))
+        assertTrue(html.contains("double") || html.contains("lastTapSide"))
+        assertTrue(html.contains("speedList = [0.75,1,1.25,1.5,2]") ||
+            html.contains("speedList=[0.75,1,1.25,1.5,2]"))
+        assertTrue(html.contains("video.currentTime="))
+        assertFalse(html.contains("id=\"video\" controls"))
+        assertTrue(html.contains("SUPJAV_HLS_STATE:"))
+    }
+
     @Test fun rejectsMp4AndUnsafeHosts() {
         assertNull(BrowserHlsDocument.render(PlaybackSource(
             "https://media.example.com/a.mp4", "video/mp4",
