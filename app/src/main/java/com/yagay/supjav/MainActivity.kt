@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
         val app = application as SupjavApp
         if (!app.preferences.getBoolean("background", true) && !isInPictureInPictureMode) {
             app.playerEngine.player.pause()
+            app.webPlayback.pauseForBackground()
         }
         app.playerEngine.savePosition()
     }
@@ -139,6 +140,7 @@ private fun Root(
 
     SideEffect { onPlayerVisibility(showPlayer) }
     val onOpen: (VideoItem) -> Unit = { video ->
+        app.webPlayback.close()
         routes.add(video)
         embeddedHlsActive = false
         webServer = null
@@ -150,6 +152,7 @@ private fun Root(
         when {
             showSettings -> showSettings = false
             webServer != null -> {
+                app.webPlayback.close()
                 embeddedHlsActive = false
                 webServer = null
             }
@@ -241,7 +244,11 @@ private fun Root(
                                 app = app, video = video, onVideo = onOpen,
                                 onPlay = { showPlayer = true },
                                 onWebPlay = { server ->
-                                    app.playerEngine.player.pause()
+                                    // Keep the actual renderer authoritative.
+                                    // Media3's old item must not remain in
+                                    // system media controls during Web HLS.
+                                    app.playerEngine.stop()
+                                    app.webPlayback.begin(video)
                                     webFallback = server
                                     webServer = server
                                 },
@@ -280,7 +287,8 @@ private fun Root(
                         onBack = { back() },
                         onWebFallback = webFallback?.let { candidate ->
                             {
-                                app.playerEngine.player.pause()
+                                app.playerEngine.stop()
+                                activeVideo?.let(app.webPlayback::begin)
                                 showPlayer = false
                                 webServer = candidate
                                 Diagnostics.log("NATIVE_FAILED_RETURN_TO_WEB line=" + candidate.name)
@@ -311,13 +319,15 @@ private fun Root(
                                         Diagnostics.log("NATIVE_HANDOFF video=" + video.id +
                                             " line=" + server.name + " type=" + source.mimeType)
                                         webFallback = server
+                                        app.webPlayback.close()
                                         embeddedHlsActive = false
                                         webServer = null
                                         app.playerEngine.play(video, source, resume = false)
                                         showPlayer = true
                                     }
                                 },
-                                onEmbeddedHlsChanged = { embeddedHlsActive = it }
+                                onEmbeddedHlsChanged = { embeddedHlsActive = it },
+                                webPlayback = app.webPlayback
                             )
                         }
                     }
