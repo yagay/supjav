@@ -158,7 +158,16 @@ private fun Root(
 
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     var tab by rememberSaveable { mutableStateOf(SupjavTab.RECOMMEND) }
-    val routes = remember { mutableStateListOf<VideoItem>() }
+    val routes = remember(app) {
+        mutableStateListOf<VideoItem>().apply {
+            // OS process death restores the last detail page without
+            // auto-playing a stale signed URL.
+            app.recentRoute.restore()?.let { add(it) }
+        }
+    }
+    LaunchedEffect(routes.toList()) {
+        app.recentRoute.save(routes.lastOrNull())
+    }
     val activeVideo = routes.lastOrNull()
     var showPlayer by remember { mutableStateOf(false) }
     var webServer by remember { mutableStateOf<VideoServer?>(null) }

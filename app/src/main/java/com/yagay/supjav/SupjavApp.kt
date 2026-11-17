@@ -12,6 +12,7 @@ import com.yagay.supjav.data.FeedCache
 import com.yagay.supjav.data.SearchStore
 import com.yagay.supjav.data.CategoryStore
 import com.yagay.supjav.data.SiteCatalogRepository
+import com.yagay.supjav.data.RecentRouteStore
 import com.yagay.supjav.util.Diagnostics
 
 class SupjavApp : Application() {
@@ -22,6 +23,7 @@ class SupjavApp : Application() {
     val searchStore by lazy { SearchStore(this) }
     val categoryStore by lazy { CategoryStore(this) }
     val catalog by lazy { SiteCatalogRepository(source, categoryStore) }
+    val recentRoute by lazy { RecentRouteStore(this) }
     var posterColumns by androidx.compose.runtime.mutableIntStateOf(-1)
         private set
     fun updatePosterColumns(columns: Int) {

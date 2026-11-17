@@ -50,6 +50,7 @@ fun CategoryPage(
     var directoryHasMore by remember { mutableStateOf(false) }
     var directorySources by remember { mutableIntStateOf(0) }
     var chosenKind by rememberSaveable { mutableStateOf(FeedKind.CATEGORY) }
+    var initialFilter by remember(chosenKind) { mutableStateOf("全部") }
     var selectedKind by remember { mutableStateOf<FeedKind?>(null) }
     var selectedPath by rememberSaveable { mutableStateOf("") }
     var selectedTitle by rememberSaveable { mutableStateOf("") }
@@ -138,12 +139,12 @@ fun CategoryPage(
                         selected = chosenKind == kind,
                         onClick = { chosenKind = kind },
                         label = { Text(
-                            when (kind) {
+                            (when (kind) {
                                 FeedKind.CATEGORY -> "分类"
                                 FeedKind.TAG -> "标签"
                                 FeedKind.ACTOR -> "演员"
                                 else -> "制作商"
-                            }
+                            }) + " " + directory.count { it.kind == kind }
                         ) }
                     )
                 }
@@ -173,12 +174,19 @@ fun CategoryPage(
             }
         }
         val results = remember(directory, chosenKind, directoryFilter) {
-            directory.filter {
-                it.kind == chosenKind &&
-                    (directoryFilter.isBlank() ||
-                        it.label.contains(directoryFilter.trim(), ignoreCase = true) ||
-                        it.path.contains(directoryFilter.trim(), ignoreCase = true))
-            }.sortedWith(compareBy({ it.label.lowercase() }, { it.path }))
+            app.catalog.directoryMatches(chosenKind, directoryFilter)
+                .sortedWith(compareBy({ it.label.lowercase() }, { it.path }))
+        }
+        fun initialOf(label: String): String {
+            val first = label.firstOrNull()?.uppercaseChar() ?: return "#"
+            return if (first in 'A'..'Z') first.toString() else "#"
+        }
+        val availableInitials = remember(results) {
+            results.map { initialOf(it.label) }.distinct().sorted()
+        }
+        val visibleResults = remember(results, initialFilter) {
+            if (initialFilter == "全部") results
+            else results.filter { initialOf(it.label) == initialFilter }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -191,8 +199,23 @@ fun CategoryPage(
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { reload++ }) { Icon(Icons.Outlined.Refresh, "刷新分类") }
         }
+        if (results.size > 35) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                (listOf("全部") + availableInitials).forEach { initial ->
+                    FilterChip(
+                        selected = initialFilter == initial,
+                        onClick = { initialFilter = initial },
+                        label = { Text(initial) }
+                    )
+                }
+            }
+        }
         if (fetching) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (directoryHasMore && !fetching) {
+        if (directoryHasMore && directoryPageDepth < 50 && !fetching) {
             TextButton(
                 onClick = {
                     directoryPageDepth = (directoryPageDepth + 3).coerceAtMost(50)
@@ -226,7 +249,7 @@ fun CategoryPage(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(results, key = { it.path }) { option ->
+            items(visibleResults, key = { it.path }) { option ->
                 OutlinedCard(
                     onClick = {
                         selectedKind = option.kind
