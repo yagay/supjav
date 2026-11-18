@@ -55,6 +55,45 @@ internal fun DetailActions(vm: DesktopController) {
             Text("准备切换：" + vm.pendingVideo?.title.orEmpty(),
                 style = MaterialTheme.typography.labelSmall, color = green)
         }
+        val engineGroup = vm.player as? DesktopPlayerGroup
+        if (engineGroup != null) {
+            var engineMenuOpen by remember { mutableStateOf(false) }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Text("播放内核", style = MaterialTheme.typography.labelSmall)
+                Box {
+                    TextButton(onClick = { engineMenuOpen = true }) {
+                        Text(engineGroup.preference.title + " · " + engineGroup.engineName)
+                    }
+                    DropdownMenu(
+                        expanded = engineMenuOpen,
+                        onDismissRequest = { engineMenuOpen = false }
+                    ) {
+                        DesktopEngineChoice.entries.forEach { choice ->
+                            DropdownMenuItem(
+                                text = { Text(choice.title) },
+                                onClick = {
+                                    engineGroup.choose(choice)
+                                    engineMenuOpen = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Text(
+                    engineGroup.availableEngines,
+                    color = Color.LightGray,
+                    style = MaterialTheme.typography.labelSmall
+                )
+                OutlinedButton(
+                    onClick = vm::playAuto,
+                    enabled = !vm.switching && detail?.servers?.isNotEmpty() == true,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                ) { Text("原生优先播放") }
+            }
+        }
         Text(
             vm.status,
             color = if (vm.browserPageUrl != null) green else Color.LightGray,
