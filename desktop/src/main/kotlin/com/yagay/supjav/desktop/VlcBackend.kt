@@ -25,9 +25,9 @@ enum class PlayerPhase {
 }
 
 /** VLCJ player with real native playback events, never optimistic playing flags. */
-class VlcBackend : AutoCloseable {
+class VlcBackend(private val discoverNative: Boolean = true) : AutoCloseable {
     val component: EmbeddedMediaPlayerComponent? = runCatching {
-        if (!NativeDiscovery().discover()) null
+        if (!discoverNative || !NativeDiscovery().discover()) null
         else EmbeddedMediaPlayerComponent()
     }.onFailure {
         Diagnostics.log("DESKTOP_VLC_UNAVAILABLE type=" + it.javaClass.simpleName)
