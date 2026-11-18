@@ -156,7 +156,7 @@ class MpvBackend : DesktopNativePlayer {
                         runCatching { Native.getComponentID(surface) }.getOrNull()
                     else null
                 }
-                if (result != null && result != 0L) break result
+                if (result != null && result != 0L) return@withTimeoutOrNull result
                 delay(60)
             }
         }
@@ -298,7 +298,7 @@ class MpvBackend : DesktopNativePlayer {
         }
     }
     override fun speed(rate: Float) {
-        if (rate.isFinite() && rate in .5f..4f &&
+        if (rate.isFinite() && rate in 0.5f..4f &&
             setProperty("speed", rate.toString())) playbackRate = rate
     }
     override fun volumePercent() = (property("volume")
@@ -308,8 +308,8 @@ class MpvBackend : DesktopNativePlayer {
             feedback = "音量 " + volumePercent() + "%"
     }
     override fun updateBrightness(value: Float) {
-        val normalized = value.coerceIn(.1f, 1f)
-        val mpvBrightness = ((normalized - .5f) * 150f).roundToInt()
+        val normalized = value.coerceIn(0.1f, 1f)
+        val mpvBrightness = ((normalized - 0.5f) * 150f).roundToInt()
         if (setProperty("brightness", mpvBrightness.toString())) {
             brightness = normalized
             feedback = "画面亮度 " + (normalized * 100).roundToInt() + "%"
