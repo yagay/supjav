@@ -484,19 +484,33 @@ class DesktopController(
                 continue
             }
             if (token != selectionRevision) return false
-            if (result is ResolveResult.Playable && player.play(result.source)) {
+            if (result is ResolveResult.Playable && player.available) {
+                // Remove WebView2 and mount the native AWT video canvas first.
+                // Otherwise VLCJ throws IllegalStateException (not displayable).
                 browserPageUrl = null
                 browserVideo = null
-                playingVideo = video
-                activeVideo = video
-                detail = selectedDetail
-                activeServer = server
-                source = result.source
-                status = "已提交播放 · " + server.name
-                saveRecent(video)
-                Diagnostics.log("DESKTOP_PLAY_SELECTED id=" + video.id +
-                    " server=" + server.name)
-                return true
+                status = "正在初始化 VLC 视频画面 · " + server.name
+                Diagnostics.log("DESKTOP_NATIVE_PREPARE line=" + server.name +
+                    " originRequired=" + result.source.includeOrigin)
+                val accepted = player.playWhenSurfaceReady(result.source)
+                if (token != selectionRevision) {
+                    if (accepted) player.stop()
+                    return false
+                }
+                if (accepted) {
+                    playingVideo = video
+                    activeVideo = video
+                    detail = selectedDetail
+                    activeServer = server
+                    source = result.source
+                    status = "VLC 已接收播放源 · " + server.name
+                    saveRecent(video)
+                    Diagnostics.log("DESKTOP_PLAY_SELECTED id=" + video.id +
+                        " server=" + server.name)
+                    return true
+                }
+                Diagnostics.log("DESKTOP_NATIVE_START_FAILED line=" + server.name +
+                    " phase=" + player.phase.name)
             }
             Diagnostics.log("DESKTOP_SOURCE_UNAVAILABLE line=" + server.name +
                 " reason=" + result.javaClass.simpleName)
