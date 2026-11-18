@@ -153,7 +153,7 @@ private fun DesktopScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.width(8.dp))
-                TextButton(onClick = { if (vm.showCategories) vm.browseCategories() else vm.loadFeed() }) {
+                TextButton(onClick = { if (vm.showCategories) vm.browseCategories() else vm.refreshFeed() }) {
                     Text("刷新")
                 }
             }
@@ -376,7 +376,18 @@ private fun DetailActions(vm: DesktopController) {
 
 @Composable
 private fun PosterGrid(vm: DesktopController, modifier: Modifier) {
-    val grid = rememberLazyGridState()
+    val scrollKey = vm.feedScrollKey
+    val saved = remember(scrollKey) { vm.savedScroll(scrollKey) }
+    val grid = rememberLazyGridState(
+        initialFirstVisibleItemIndex = saved.first,
+        initialFirstVisibleItemScrollOffset = saved.second
+    )
+    DisposableEffect(scrollKey, grid) {
+        onDispose {
+            vm.saveScroll(scrollKey, grid.firstVisibleItemIndex,
+                grid.firstVisibleItemScrollOffset)
+        }
+    }
     val last by remember { derivedStateOf {
         grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
     } }
