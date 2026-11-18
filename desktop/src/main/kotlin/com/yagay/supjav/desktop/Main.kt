@@ -214,6 +214,8 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
     var length by remember { mutableLongStateOf(0L) }
     var seek by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
+    var volume by remember { mutableFloatStateOf(50f) }
+    var volumeDragging by remember { mutableStateOf(false) }
     val component = vm.player.component
     val browserUrl = vm.browserPageUrl
     val browserSession = vm.browserSession
@@ -227,39 +229,48 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
         gestures?.install()
         onDispose { gestures?.dispose() }
     }
-    LaunchedEffect(vm.activeVideo?.id) {
+    LaunchedEffect(vm.activeVideo?.id, browserUrl, component) {
         while (true) {
-            time = vm.player.position()
-            length = vm.player.duration()
-            if (!dragging && length > 0) seek = (time.toFloat() / length).coerceIn(0f, 1f)
-            delay(450)
+            if (browserUrl == null) {
+                time = vm.player.position().coerceAtLeast(0L)
+                length = vm.player.duration().coerceAtLeast(0L)
+                if (!dragging && length > 0L) {
+                    seek = (time.toFloat() / length).coerceIn(0f, 1f)
+                }
+                if (!volumeDragging) volume = vm.player.volumePercent().toFloat()
+            }
+            delay(350)
         }
     }
+    val canPrevious = !vm.switching && PlaybackQueuePolicy.adjacent(
+        vm.playlistItems.toList(), (vm.playingVideo ?: vm.activeVideo)?.id, -1
+    ) != null
+    val canNext = !vm.switching && (
+        PlaybackQueuePolicy.adjacent(
+            vm.playlistItems.toList(), (vm.playingVideo ?: vm.activeVideo)?.id, 1
+        ) != null || vm.canLoadQueueMore
+    )
 
     Column(
         (if (fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.Black)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF080908))
     ) {
         Box(
-            if (fullscreen) Modifier.fillMaxWidth().weight(1f)
-            else Modifier.fillMaxWidth().height(
-                if (browserUrl != null) 460.dp else 300.dp
-            ),
+            modifier = if (fullscreen) Modifier.fillMaxWidth().weight(1f)
+                       else Modifier.fillMaxWidth().aspectRatio(16f / 9f),
             contentAlignment = Alignment.Center
         ) {
             if (browserUrl != null) {
                 key(browserSession) {
                     DesktopBrowserPlayer(
-                        browserUrl,
-                        vm.activeServer?.link,
-                        Modifier.fillMaxSize()
+                        browserUrl, vm.activeServer?.link, Modifier.fillMaxSize()
                     )
                 }
             } else if (component == null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("VLC 3.x 未安装 / 无法加载", color = Color.White)
-                    Text("安装 64 位 VLC 后可在此播放 MP4 / HLS",
+                    Text("原生播放器不可用", color = Color.White)
+                    Text("请安装 64 位 VLC 或正确配置 MPV",
                         color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                 }
             } else {
@@ -269,67 +280,102 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
                     background = Color.Black
                 )
             }
+            if (browserUrl == null &&
+                vm.player.phase in setOf(PlayerPhase.OPENING, PlayerPhase.BUFFERING)) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(30.dp),
+                    color = green, strokeWidth = 2.dp
+                )
+            }
         }
-        if (vm.showControls) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 7.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+
+        // A native stream has independent seek/play/volume controls.
+        // WebView2 cannot be controlled through VLC, so do not show inert controls.
+        if (vm.showControls || browserUrl != null) {
+            Column(
+                Modifier.fillMaxWidth().background(Color(0xFF151715))
+                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
                 if (browserUrl == null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(clock(time), color = Color.White,
-                        style = MaterialTheme.typography.labelSmall)
-                    Slider(
-                        modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
-                        value = seek,
-                        onValueChange = { seek = it; dragging = true },
-                        onValueChangeFinished = {
-                            if (length > 0) vm.player.seekTo((seek * length).toLong())
-                            dragging = false
-                        }
-                    )
-                    Text(clock(length), color = Color.White,
-                        style = MaterialTheme.typography.labelSmall)
-                }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(clock(if (dragging) (seek * length).toLong() else time),
+                            color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(
+                            modifier = Modifier.weight(1f).height(28.dp)
+                                .padding(horizontal = 8.dp),
+                            value = seek,
+                            enabled = length > 0L,
+                            onValueChange = { seek = it; dragging = true },
+                            onValueChangeFinished = {
+                                if (length > 0L) vm.player.seekTo((seek * length).toLong())
+                                dragging = false
+                            }
+                        )
+                        Text(clock(length), color = Color.LightGray,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Control(
-                        "⏮ 上一部",
-                        !vm.switching && PlaybackQueuePolicy.adjacent(
-                            vm.playlistItems.toList(),
-                            (vm.playingVideo ?: vm.activeVideo)?.id, -1
-                        ) != null
-                    ) { vm.adjacent(-1) }
+                    PlayerButton("⏮", "上一部", canPrevious) { vm.adjacent(-1) }
                     if (browserUrl == null) {
-                        Control("−10s") { vm.player.seek(-10_000) }
-                        Control(if (vm.player.playing) "暂停" else "播放") { vm.player.toggle() }
-                        Control("+10s") { vm.player.seek(10_000) }
-                    } else {
-                        Text("网页模式 · 在画面内操作播放和进度",
-                            color = Color.LightGray,
-                            style = MaterialTheme.typography.labelSmall)
+                        PlayerButton("↶10", "后退10秒") { vm.player.seek(-10_000) }
+                        PlayerButton(
+                            if (vm.player.playing) "Ⅱ" else "▶",
+                            if (vm.player.playing) "暂停" else "播放",
+                            prominent = true
+                        ) { vm.player.toggle() }
+                        PlayerButton("10↷", "前进10秒") { vm.player.seek(10_000) }
                     }
-                    Control(
-                        "下一部 ⏭",
-                        !vm.switching && (
-                            PlaybackQueuePolicy.adjacent(
-                                vm.playlistItems.toList(),
-                                (vm.playingVideo ?: vm.activeVideo)?.id, 1
-                            ) != null || vm.canLoadQueueMore
+                    PlayerButton("⏭", "下一部", canNext) { vm.adjacent(1) }
+                    if (browserUrl == null) {
+                        Spacer(Modifier.width(8.dp))
+                        PlayerButton(
+                            if (volume <= 0f) "◀̸" else "♪", "静音切换"
+                        ) {
+                            if (volume > 0f) {
+                                vm.player.setVolumePercent(0)
+                                volume = 0f
+                            } else {
+                                vm.player.setVolumePercent(50)
+                                volume = 50f
+                            }
+                        }
+                        Slider(
+                            value = volume, onValueChange = {
+                                volume = it
+                                volumeDragging = true
+                                vm.player.setVolumePercent(it.toInt())
+                            },
+                            onValueChangeFinished = { volumeDragging = false },
+                            valueRange = 0f..100f,
+                            modifier = Modifier.width(92.dp).height(28.dp)
                         )
-                    ) { vm.adjacent(1) }
+                    } else {
+                        Text("网页模式 · 播放和进度请在网页画面中操作",
+                            color = Color.LightGray,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(start = 6.dp))
+                    }
                     Spacer(Modifier.weight(1f))
-                    Control("列表") { vm.showQueue = !vm.showQueue }
-                    Control(if (fullscreen) "退出全屏" else "全屏") { toggleFullscreen() }
+                    PlayerButton("☷", "播放列表") { vm.showQueue = !vm.showQueue }
+                    PlayerButton(
+                        if (fullscreen) "⤡" else "⛶",
+                        if (fullscreen) "退出全屏" else "全屏"
+                    ) { toggleFullscreen() }
                 }
             }
         }
     }
-    if (vm.player.feedback.isNotBlank()) {
-        Text(vm.player.feedback, style = MaterialTheme.typography.labelSmall,
-            color = green)
+    if (vm.player.feedback.isNotBlank() && browserUrl == null) {
+        Text(vm.player.feedback, style = MaterialTheme.typography.labelSmall, color = green)
     }
     if (browserUrl == null) {
         vm.player.errorMessage?.let { message ->
@@ -337,24 +383,35 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
                 style = MaterialTheme.typography.labelSmall)
         }
     }
-    if (browserUrl == null &&
-        vm.player.phase in setOf(PlayerPhase.OPENING, PlayerPhase.BUFFERING)) {
-        LinearProgressIndicator(Modifier.fillMaxWidth())
-    }
 }
 
 private fun clock(ms: Long): String {
     if (ms <= 0) return "00:00"
     val seconds = ms / 1000
-    return "%02d:%02d".format(seconds / 60, seconds % 60)
+    val hours = seconds / 3600
+    return if (hours > 0) "%d:%02d:%02d".format(hours, seconds / 60 % 60, seconds % 60)
+           else "%02d:%02d".format(seconds / 60, seconds % 60)
 }
 
 @Composable
-private fun Control(label: String, enabled: Boolean = true, click: () -> Unit) {
+private fun PlayerButton(
+    symbol: String,
+    description: String,
+    enabled: Boolean = true,
+    prominent: Boolean = false,
+    onClick: () -> Unit
+) {
+    val color = if (!enabled) Color.Gray else if (prominent) green else Color.White
     TextButton(
+        onClick = onClick,
         enabled = enabled,
-        onClick = click,
-        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 4.dp)
-    ) { Text(label, style = MaterialTheme.typography.labelMedium) }
+        modifier = Modifier.height(38.dp).width(if (prominent) 48.dp else 43.dp),
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Text(symbol, color = color,
+            style = if (prominent) MaterialTheme.typography.titleLarge
+                    else MaterialTheme.typography.titleMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 1)
+    }
 }
-
