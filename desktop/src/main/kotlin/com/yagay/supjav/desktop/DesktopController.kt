@@ -469,8 +469,9 @@ class DesktopController(
     ): Boolean {
         for (server in servers) {
             if (token != selectionRevision) return false
-            if (DesktopBrowserPolicy.preferBrowser(server) &&
-                launchBrowser(video, selectedDetail, server, "javascript-player")) {
+            if ((DesktopBrowserPolicy.preferBrowser(server) || !player.available) &&
+                launchBrowser(video, selectedDetail, server,
+                    if (player.available) "javascript-player" else "vlc-not-installed")) {
                 return true
             }
             status = "解析线路 " + server.name
