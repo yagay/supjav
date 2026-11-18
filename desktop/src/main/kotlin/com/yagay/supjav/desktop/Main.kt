@@ -73,7 +73,8 @@ private fun DesktopScreen(
     Box(
         Modifier.fillMaxSize().background(surface)
             .onPreviewKeyEvent { event ->
-                if (searchFocused || event.type != KeyEventType.KeyDown) false
+                if (searchFocused || vm.browserPageUrl != null ||
+                    event.type != KeyEventType.KeyDown) false
                 else when (event.key) {
                     Key.Spacebar -> { vm.player.toggle(); true }
                     Key.DirectionLeft -> { vm.player.seek(-10_000); true }
@@ -199,8 +200,11 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
     var seek by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
     val component = vm.player.component
-    val gestures = remember(component) {
-        if (component == null) null else DesktopTouchGestures(component, vm.player) {
+    val browserUrl = vm.browserPageUrl
+    val browserSession = vm.browserSession
+    val gestures = remember(component, browserUrl) {
+        if (component == null || browserUrl != null) null
+        else DesktopTouchGestures(component, vm.player) {
             vm.showControls = !vm.showControls
         }
     }
@@ -227,7 +231,11 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
             else Modifier.fillMaxWidth().height(300.dp),
             contentAlignment = Alignment.Center
         ) {
-            if (component == null) {
+            if (browserUrl != null) {
+                key(browserSession) {
+                    DesktopBrowserPlayer(browserUrl, Modifier.fillMaxSize())
+                }
+            } else if (component == null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("VLC 3.x 未安装 / 无法加载", color = Color.White)
                     Text("安装 64 位 VLC 后可在此播放 MP4 / HLS",
@@ -244,6 +252,7 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
         if (vm.showControls) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 7.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (browserUrl == null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(clock(time), color = Color.White,
                         style = MaterialTheme.typography.labelSmall)
@@ -259,6 +268,7 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
                     Text(clock(length), color = Color.White,
                         style = MaterialTheme.typography.labelSmall)
                 }
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
@@ -271,9 +281,15 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
                             (vm.playingVideo ?: vm.activeVideo)?.id, -1
                         ) != null
                     ) { vm.adjacent(-1) }
-                    Control("−10s") { vm.player.seek(-10_000) }
-                    Control(if (vm.player.playing) "暂停" else "播放") { vm.player.toggle() }
-                    Control("+10s") { vm.player.seek(10_000) }
+                    if (browserUrl == null) {
+                        Control("−10s") { vm.player.seek(-10_000) }
+                        Control(if (vm.player.playing) "暂停" else "播放") { vm.player.toggle() }
+                        Control("+10s") { vm.player.seek(10_000) }
+                    } else {
+                        Text("网页模式 · 在画面内操作播放和进度",
+                            color = Color.LightGray,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
                     Control(
                         "下一部 ⏭",
                         !vm.switching && (
@@ -294,11 +310,14 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
         Text(vm.player.feedback, style = MaterialTheme.typography.labelSmall,
             color = green)
     }
-    vm.player.errorMessage?.let { message ->
-        Text(message, color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.labelSmall)
+    if (browserUrl == null) {
+        vm.player.errorMessage?.let { message ->
+            Text(message, color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.labelSmall)
+        }
     }
-    if (vm.player.phase in setOf(PlayerPhase.OPENING, PlayerPhase.BUFFERING)) {
+    if (browserUrl == null &&
+        vm.player.phase in setOf(PlayerPhase.OPENING, PlayerPhase.BUFFERING)) {
         LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
