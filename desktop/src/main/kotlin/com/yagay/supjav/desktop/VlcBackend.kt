@@ -39,6 +39,7 @@ class VlcBackend(private val discoverNative: Boolean = true) : DesktopNativePlay
         Diagnostics.log("DESKTOP_VLC_UNAVAILABLE type=" + it.javaClass.simpleName)
     }.getOrNull()
 
+    private var hlsRelay: DesktopHlsRelay? = null
     override val available get() = component != null
     override var phase by mutableStateOf(PlayerPhase.IDLE)
         private set
@@ -144,10 +145,15 @@ class VlcBackend(private val discoverNative: Boolean = true) : DesktopNativePlay
         if (!source.url.startsWith("https://") ||
             !source.referer.startsWith("https://")) return false
         return runCatching {
+            hlsRelay?.close()
+            hlsRelay = null
+            val playbackUrl = if (source.mimeType == "application/x-mpegURL") {
+                DesktopHlsRelay(source).also { hlsRelay = it }.url
+            } else source.url
             errorMessage = null
             phase = PlayerPhase.OPENING
             val accepted = c.mediaPlayer().media().play(
-                source.url,
+                playbackUrl,
                 ":http-referrer=" + source.referer,
                 ":http-user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             )
@@ -156,9 +162,12 @@ class VlcBackend(private val discoverNative: Boolean = true) : DesktopNativePlay
                 errorMessage = "VLC 未接受此播放源"
             }
             Diagnostics.log("DESKTOP_PLAY_REQUEST type=" + source.mimeType +
-                " accepted=" + accepted + " originHint=" + source.includeOrigin)
+                " accepted=" + accepted + " originHint=" + source.includeOrigin +
+                " relayed=" + (hlsRelay != null))
             accepted
         }.getOrElse {
+            hlsRelay?.close()
+            hlsRelay = null
             phase = PlayerPhase.ERROR
             errorMessage = "打开播放源失败：" + it.javaClass.simpleName
             val message = it.message.orEmpty().replace(Regex("(?i)https?://\\S+"), "[URL]")
@@ -173,6 +182,8 @@ class VlcBackend(private val discoverNative: Boolean = true) : DesktopNativePlay
 
     override fun stop() {
         runCatching { component?.mediaPlayer()?.controls()?.stop() }
+        hlsRelay?.close()
+        hlsRelay = null
         phase = PlayerPhase.STOPPED
     }
 
@@ -230,6 +241,8 @@ class VlcBackend(private val discoverNative: Boolean = true) : DesktopNativePlay
         updateBrightness(brightness + delta)
     }
     override fun close() {
+        hlsRelay?.close()
+        hlsRelay = null
         runCatching {
             component?.mediaPlayer()?.events()?.removeMediaPlayerEventListener(listener)
             component?.release()
