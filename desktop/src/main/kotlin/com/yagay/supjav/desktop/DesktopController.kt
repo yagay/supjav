@@ -509,14 +509,12 @@ class DesktopController(
     ): Boolean {
         for (server in servers) {
             if (token != selectionRevision) return false
-            if (DesktopBrowserPolicy.preferBrowser(server) || !player.available) {
-                if (servers.size == 1 || !player.available) {
-                    if (launchBrowser(video, selectedDetail, server,
-                            if (player.available) "javascript-player" else "native-engine-missing"))
-                        return true
-                }
-                // In automatic playback, allow the native-capable lines to
-                // run first rather than jumping to EVS/WebView2 immediately.
+            // All providers, including VOE/EVS/LUC, must be offered to the
+            // resolver before declaring them browser-only. A server name is
+            // not evidence that a playable MP4/HLS source is unavailable.
+            if (!player.available) {
+                if (launchBrowser(video, selectedDetail, server, "native-engine-missing"))
+                    return true
                 continue
             }
             status = "解析线路 " + server.name
@@ -534,7 +532,7 @@ class DesktopController(
                 // Otherwise VLCJ throws IllegalStateException (not displayable).
                 browserPageUrl = null
                 browserVideo = null
-                status = "正在初始化 VLC 视频画面 · " + server.name
+                status = "正在初始化原生视频画面 · " + server.name
                 Diagnostics.log("DESKTOP_NATIVE_PREPARE line=" + server.name +
                     " originRequired=" + result.source.includeOrigin)
                 val accepted = player.playWhenSurfaceReady(result.source)
@@ -548,7 +546,7 @@ class DesktopController(
                     detail = selectedDetail
                     activeServer = server
                     source = result.source
-                    status = "VLC 已接收播放源 · " + server.name
+                    status = player.engineName + " 已接收播放源 · " + server.name
                     saveRecent(video)
                     Diagnostics.log("DESKTOP_PLAY_SELECTED id=" + video.id +
                         " server=" + server.name)
