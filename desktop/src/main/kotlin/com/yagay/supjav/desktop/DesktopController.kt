@@ -434,6 +434,44 @@ class DesktopController(
         return true
     }
 
+    /** Play the current CD with native-capable lines first (MPV, then VLC). */
+    fun playAuto() {
+        val video = activeVideo ?: return
+        val selectedDetail = detail ?: return
+        if (switching || selectedDetail.servers.isEmpty()) return
+        val token = ++selectionRevision
+        switchJob?.cancel()
+        detailJob?.cancel()
+        pendingVideo = video
+        switching = true
+        status = "正在尝试原生播放..."
+        switchJob = scope.launch {
+            try {
+                val firstPart = VideoParts.partOf(
+                    activeServer ?: selectedDetail.servers.first()
+                )
+                val candidates = selectedDetail.servers.filter { candidate ->
+                    firstPart == null || VideoParts.partOf(candidate) == firstPart
+                }
+                val ordered = DesktopPlaybackOrder.nativeFirst(candidates)
+                if (!attemptPlay(video, selectedDetail, ordered, token) &&
+                    token == selectionRevision) {
+                    status = "原生播放失败，可使用内置网页播放器"
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                if (token == selectionRevision)
+                    status = "播放器启动失败：" + error.javaClass.simpleName
+            } finally {
+                if (token == selectionRevision) {
+                    pendingVideo = null
+                    switching = false
+                }
+            }
+        }
+    }
+
     /** Manual server switch also resolves before replacing the playing item. */
     fun play(server: VideoServer) {
         val target = activeVideo ?: return
