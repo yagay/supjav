@@ -41,7 +41,7 @@ internal class DesktopHlsRelay(private val source: PlaybackSource) : AutoCloseab
     private val executor = Executors.newCachedThreadPool { task ->
         Thread(task, "Supjav-HLS-Relay").apply { isDaemon = true }
     }
-    private val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 8)
+    private val server = HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 8)
     val url: String get() = localUrl(source.url)
 
     init {
@@ -94,7 +94,7 @@ internal class DesktopHlsRelay(private val source: PlaybackSource) : AutoCloseab
                         if (isPlaylist) "application/vnd.apple.mpegurl" else
                             contentType.ifBlank { "application/octet-stream" })
                     exchange.responseHeaders.add("Cache-Control", "no-store")
-                    exchange.sendResponseHeaders(upstream.code.toLong().let { it.toInt() }, payload.size.toLong())
+                    exchange.sendResponseHeaders(upstream.code, payload.size.toLong())
                     exchange.responseBody.use { it.write(payload) }
                 }
             } catch (error: Exception) {
