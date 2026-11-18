@@ -17,7 +17,7 @@ import kotlinx.coroutines.*
  * revisions. Obsolete responses never replace the visible page or playback.
  */
 class DesktopController(
-    val player: VlcBackend,
+    val player: DesktopNativePlayer,
     private val gateway: DesktopGateway = LiveDesktopGateway(),
     private val storage: DesktopVideoStore = DesktopVideoStore()
 ) : AutoCloseable {
@@ -474,7 +474,7 @@ class DesktopController(
             if (DesktopBrowserPolicy.preferBrowser(server) || !player.available) {
                 if (servers.size == 1 || !player.available) {
                     if (launchBrowser(video, selectedDetail, server,
-                            if (player.available) "javascript-player" else "vlc-not-installed"))
+                            if (player.available) "javascript-player" else "native-engine-missing"))
                         return true
                 }
                 // In automatic playback, allow the native-capable lines to
