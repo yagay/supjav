@@ -35,6 +35,33 @@ gradle -p desktop packageMsi
 
 GitHub Actions workflow: `.github/workflows/pc.yml` on branch `pc`; the MSI installer is uploaded as `supjav-desktop-windows` after a successful Windows build.
 
+## Windows MSI in-place upgrades
+
+Starting with the `0.2.x` installer series, Windows MSI packages have the
+**same permanent UpgradeCode** and a **newer ProductVersion on every CI run**.
+Download a newer MSI and install it over the existing `0.2.x` application.
+Close Supjav Desktop before installing. The application name, publisher and
+installation identity do not change, and there is no need to delete history
+or favorites.
+
+GitHub Actions passes the unique `github.run_number` to Gradle and checks
+the generated MSI's ProductVersion and UpgradeCode before uploading it.
+For an installer built locally, increment the number yourself:
+
+```powershell
+gradle -p desktop -PdesktopBuildNumber=123 test packageMsi
+```
+
+Important: the original `0.1.0` preview MSIs did **not** configure a stable
+Windows UpgradeCode. Their automatically generated identity may differ from
+the new installer. **Only once**, if the first `0.2.x` MSI does not replace
+your older preview, close the app and uninstall `SupjavDesktop 0.1.0` from
+Windows Settings > Apps > Installed apps, then install the new `0.2.x`
+MSI. Do not delete `%LOCALAPPDATA%\SupjavDesktop`: the favorites, history
+and diagnostics are stored separately and survive an ordinary uninstall.
+Subsequent `0.2.x` installs can upgrade in place without that step.
+
+
 ## Architecture
 
 ```text
