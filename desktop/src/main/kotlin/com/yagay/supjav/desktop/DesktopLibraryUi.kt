@@ -32,9 +32,14 @@ import kotlinx.coroutines.delay
 internal fun DetailActions(vm: DesktopController) {
     val detail = vm.detail
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically
+        ) {
             Text(vm.activeVideo?.title ?: vm.playingVideo?.title.orEmpty(),
-                Modifier.weight(1f),
+                Modifier.widthIn(max = 300.dp),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium)
             TextButton(onClick = vm::toggleFavorite) {
@@ -58,9 +63,10 @@ internal fun DetailActions(vm: DesktopController) {
         val engineGroup = vm.player as? DesktopPlayerGroup
         if (engineGroup != null) {
             var engineMenuOpen by remember { mutableStateOf(false) }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically
             ) {
                 Text("播放内核", style = MaterialTheme.typography.labelSmall)
                 Box {
@@ -106,7 +112,11 @@ internal fun DetailActions(vm: DesktopController) {
         } else {
             val parts = VideoParts.available(detail.servers)
             if (parts.size > 1) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically
+                ) {
                     Text("视频分段", style = MaterialTheme.typography.labelMedium)
                     Spacer(Modifier.width(10.dp))
                     parts.forEach { part ->
@@ -120,8 +130,9 @@ internal fun DetailActions(vm: DesktopController) {
                     }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp),
-                verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically) {
                 Text("线路", style = MaterialTheme.typography.labelMedium)
                 val currentPart = vm.activeServer?.let(VideoParts::partOf) ?: parts.firstOrNull()
                 detail.servers.filter { server ->
