@@ -35,6 +35,13 @@ class DesktopController(
     private var cursor: String? = null
     private var duplicatePages = 0
     private var localList: String? = null
+    private data class FeedKey(val kind: FeedKind, val value: String)
+    private data class FeedSnapshot(
+        val items: List<VideoItem>, val page: Int, val cursor: String?,
+        val reachedEnd: Boolean, val duplicatePages: Int
+    )
+    private val feedCache = LinkedHashMap<FeedKey, FeedSnapshot>(12, .75f, true)
+    private val feedScroll = HashMap<String, Pair<Int, Int>>()
 
     val videos = mutableStateListOf<VideoItem>()
     val playlistItems = mutableStateListOf<VideoItem>()
@@ -100,6 +107,24 @@ class DesktopController(
         else if (section == FeedKind.SEARCH) "搜索结果 · $sectionValue"
         else section.title
 
+    val feedScrollKey get() = localList?.let { "local:" + it }
+        ?: section.name + ":" + sectionValue
+    fun savedScroll(key: String): Pair<Int, Int> = feedScroll[key] ?: (0 to 0)
+    fun saveScroll(key: String, index: Int, offset: Int) {
+        feedScroll[key] = index.coerceAtLeast(0) to offset.coerceAtLeast(0)
+    }
+
+    private fun rememberCurrentFeed() {
+        if (localList != null || showCategories || videos.isEmpty()) return
+        val key = FeedKey(section, sectionValue)
+        feedCache[key] = FeedSnapshot(videos.toList(), page, cursor,
+            reachedEnd, duplicatePages)
+        while (feedCache.size > 12) {
+            val oldest = feedCache.keys.firstOrNull() ?: break
+            feedCache.remove(oldest)
+        }
+    }
+
     init {
         recent.addAll(storage.read("recent"))
         favorites.addAll(storage.read("favorites"))
@@ -108,6 +133,7 @@ class DesktopController(
 
     fun select(kind: FeedKind, value: String = "") {
         if (kind == FeedKind.SEARCH && value.isBlank()) return
+        rememberCurrentFeed()
         section = kind
         sectionValue = value
         localList = null
@@ -124,6 +150,7 @@ class DesktopController(
     }
 
     fun browseCategories() {
+        rememberCurrentFeed()
         feedRevision++
         feedJob?.cancel()
         pageLoading = false
@@ -153,19 +180,34 @@ class DesktopController(
         }
     }
 
-    fun loadFeed() {
+    fun refreshFeed() {
+        feedCache.remove(FeedKey(section, sectionValue))
+        loadFeed(force = true)
+    }
+
+    fun loadFeed(force: Boolean = false) {
         val token = ++feedRevision
         feedJob?.cancel()
         pageLoading = false
         loading = false
-        page = 0
-        cursor = null
-        duplicatePages = 0
-        reachedEnd = false
         pageError = null
+        val cached = if (force) null else feedCache[FeedKey(section, sectionValue)]
         videos.clear()
-        status = "正在加载作品..."
-        feedJob = scope.launch { fetchPage(token) }
+        if (cached != null) {
+            videos.addAll(cached.items)
+            page = cached.page
+            cursor = cached.cursor
+            reachedEnd = cached.reachedEnd
+            duplicatePages = cached.duplicatePages
+            status = "已恢复 " + videos.size + " 部缓存作品"
+        } else {
+            page = 0
+            cursor = null
+            duplicatePages = 0
+            reachedEnd = false
+            status = "正在加载作品..."
+            feedJob = scope.launch { fetchPage(token) }
+        }
     }
 
     fun loadMore() {
@@ -196,7 +238,8 @@ class DesktopController(
             reachedEnd = result.items.isEmpty() || duplicatePages >= 2
             if (duplicatePages >= 2) pageError =
                 "连续两页没有新作品，已停止重复请求"
-            status = "已加载 ${videos.size} 部作品"
+            status = "已加载 " + videos.size + " 部作品"
+            rememberCurrentFeed()
             // When the user is still browsing the originating feed, keep
             // the player queue in sync. After navigation it remains frozen.
             if (queueOriginRevision == token && queueKind == kind && queueValue == value) {
@@ -434,6 +477,7 @@ class DesktopController(
 
     fun showLocalList(key: String) {
         require(key in setOf("recent", "favorites"))
+        rememberCurrentFeed()
         feedRevision++
         feedJob?.cancel()
         categoryJob?.cancel()
