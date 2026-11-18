@@ -1,0 +1,73 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+plugins {
+    kotlin("jvm") version "2.2.10"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.2.10"
+    id("org.jetbrains.compose") version "1.9.3"
+}
+
+group = "com.yagay.supjav"
+version = "0.1.0"
+
+kotlin {
+    jvmToolchain(17)
+}
+
+// Compile Android's pure Kotlin source files directly as desktop sources.
+// The parsing and CD/queue algorithms stay authoritative in ONE location.
+// Android UI, SQLite, Media3, and Android Diagnostics are deliberately excluded.
+val sharedKotlin = fileTree("../app/src/main/java") {
+    include(
+        "com/yagay/supjav/model/VideoModels.kt",
+        "com/yagay/supjav/data/SupjavSource.kt",
+        "com/yagay/supjav/data/MediaSourceDetector.kt",
+        "com/yagay/supjav/data/SupjavServerAdapters.kt",
+        "com/yagay/supjav/data/PlaybackResolver.kt",
+        "com/yagay/supjav/data/PlaybackChallengeDetector.kt",
+        "com/yagay/supjav/data/MediaGateway.kt",
+        "com/yagay/supjav/data/SitePlayerWrapper.kt",
+        "com/yagay/supjav/player/VideoParts.kt",
+        "com/yagay/supjav/player/PlaybackDefaults.kt",
+        "com/yagay/supjav/player/PlaybackQueuePolicy.kt"
+    )
+}
+tasks.named<KotlinCompile>("compileKotlin") {
+    source(sharedKotlin)
+}
+
+dependencies {
+    implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jsoup:jsoup:1.22.1")
+    implementation("org.json:json:20250517")
+    implementation("io.coil-kt.coil3:coil-compose:3.6.3")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
+    implementation("uk.co.caprica:vlcj:4.11.0")
+    testImplementation(kotlin("test"))
+    testImplementation("junit:junit:4.13.2")
+}
+
+compose.desktop {
+    application {
+        mainClass = "com.yagay.supjav.desktop.MainKt"
+        nativeDistributions {
+            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+            packageName = "SupjavDesktop"
+            packageVersion = "0.1.0"
+            description = "Supjav desktop browsing and playback"
+            vendor = "YagaY"
+            windows {
+                menuGroup = "Supjav Desktop"
+                shortcut = true
+            }
+        }
+    }
+}
+
+tasks.test {
+    useJUnit()
+}
