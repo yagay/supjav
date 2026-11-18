@@ -8,7 +8,20 @@ plugins {
 }
 
 group = "com.yagay.supjav"
-version = "0.1.0"
+
+// Each Windows CI run gets a strictly increasing MSI version. Keeping the
+// same ProductVersion (previously always 0.1.0) prevents a major upgrade.
+// For local packages, pass -PdesktopBuildNumber=N; otherwise use 1.
+val desktopBuildNumber = providers.gradleProperty("desktopBuildNumber")
+    .orElse(providers.environmentVariable("GITHUB_RUN_NUMBER"))
+    .getOrElse("1")
+    .toIntOrNull()
+    ?: error("desktopBuildNumber must be a positive integer")
+require(desktopBuildNumber in 1..65535) {
+    "Windows MSI build number must be between 1 and 65535"
+}
+val desktopPackageVersion = "0.2.$desktopBuildNumber"
+version = desktopPackageVersion
 
 kotlin {
     jvmToolchain(17)
@@ -57,10 +70,13 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "SupjavDesktop"
-            packageVersion = "0.1.0"
+            packageVersion = desktopPackageVersion
             description = "Supjav desktop browsing and playback"
             vendor = "YagaY"
             windows {
+                // Never change this UUID for future SupjavDesktop releases.
+                // All 0.2+ MSI/EXE builds share the same Windows UpgradeCode.
+                upgradeUuid = "6980c41e-4740-523c-8ca1-c547c898fc39"
                 menuGroup = "Supjav Desktop"
                 shortcut = true
             }
