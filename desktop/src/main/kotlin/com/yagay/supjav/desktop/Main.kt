@@ -27,6 +27,7 @@ import com.yagay.supjav.player.VideoParts
 import com.yagay.supjav.player.PlaybackQueuePolicy
 import com.yagay.supjav.util.Diagnostics
 import java.awt.Desktop
+import java.nio.file.Files
 import kotlinx.coroutines.delay
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -122,6 +123,20 @@ private fun DesktopScreen(
                     runCatching { Desktop.getDesktop().open(logfile.parent.toFile()) }
                 }
             }) { Text("打开诊断日志目录") }
+            val nativeGroup = vm.player as? DesktopPlayerGroup
+            if (nativeGroup != null) {
+                Text("原生内核：" + nativeGroup.availableEngines,
+                    color = Color.LightGray,
+                    style = MaterialTheme.typography.labelSmall)
+                TextButton(onClick = {
+                    val dir = DesktopVideoStore.defaultDirectory().resolve("mpv")
+                    runCatching {
+                        Files.createDirectories(dir)
+                        if (Desktop.isDesktopSupported())
+                            Desktop.getDesktop().open(dir.toFile())
+                    }
+                }) { Text("打开 MPV 运行库目录") }
+            }
             Text("PC · 触屏 / 鼠标", color = Color.LightGray,
                 style = MaterialTheme.typography.labelSmall)
             if (!vm.player.available)
