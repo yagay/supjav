@@ -99,7 +99,7 @@ class DesktopControllerTest {
             awaitCondition("week feed") { vm.videos.firstOrNull()?.id == "201" }
             vm.select(FeedKind.LATEST)
             assertEquals(listOf("101", "102"), vm.videos.map { it.id })
-            assertEquals(1, fake.calls.count { it == FeedKind.LATEST to 1 })
+            assertEquals(1, fake.calls.count { it == (FeedKind.LATEST to 1) })
         } finally { vm.close() }
     }
 
