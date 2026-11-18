@@ -126,6 +126,11 @@ class VlcBackend(private val discoverNative: Boolean = true) : AutoCloseable {
         }
     }
 
+    fun stop() {
+        runCatching { component?.mediaPlayer()?.controls()?.stop() }
+        phase = PlayerPhase.STOPPED
+    }
+
     fun toggle() {
         val media = component?.mediaPlayer() ?: return
         runCatching {
