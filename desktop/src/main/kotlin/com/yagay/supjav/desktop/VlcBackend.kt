@@ -60,7 +60,7 @@ class VlcBackend : AutoCloseable {
         }
     }
     fun seek(deltaMs: Long) {
-        runCatching { component?.mediaPlayer()?.controls()?.skipTime(deltaMs) }
+        runCatching { component?.mediaPlayer()?.controls()?.skip(deltaMs) }
     }
     fun position() = runCatching {
         component?.mediaPlayer()?.status()?.time() ?: 0L
