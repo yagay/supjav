@@ -273,20 +273,21 @@ class DesktopTouchGestures(
             Gesture.SEEK -> {
                 val duration = player.duration()
                 if (duration > 0) {
-                    seekTarget = (seekStart + dx / host.width.coerceAtLeast(1) * duration)
-                        .toLong().coerceIn(0L, duration)
+                    seekTarget = DesktopGestureMath.seekTarget(
+                        seekStart, dx, host.width, duration
+                    )
                     player.feedback = "进度 " + seekTarget / 1000 + "s"
                 }
             }
             Gesture.BRIGHTNESS -> {
-                val value = initialBrightness -
-                    dy / host.height.coerceAtLeast(1) * .9f
-                player.updateBrightness(value)
+                player.updateBrightness(DesktopGestureMath.brightness(
+                    initialBrightness, dy, host.height
+                ))
             }
             Gesture.VOLUME -> {
-                val value = initialVolume -
-                    dy / host.height.coerceAtLeast(1) * 100f
-                player.setVolumePercent(value.roundToInt())
+                player.setVolumePercent(DesktopGestureMath.volume(
+                    initialVolume, dy, host.height
+                ))
             }
             Gesture.NONE -> Unit
         }
