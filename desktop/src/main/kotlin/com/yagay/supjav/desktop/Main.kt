@@ -19,6 +19,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.*
 import androidx.compose.ui.awt.SwingPanel
 import coil3.compose.AsyncImage
@@ -144,50 +145,65 @@ private fun DesktopScreen(
                 Text("未检测到 MPV 或 VLC，网页播放仍可使用",
                     color = Color(0xFFFFBBA9), style = MaterialTheme.typography.labelSmall)
         }
-        Column(
-            Modifier.weight(1f).fillMaxHeight()
-                .verticalScroll(rememberScrollState()).padding(15.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = vm.searchQuery,
-                    onValueChange = { vm.searchQuery = it },
-                    modifier = Modifier.weight(1f)
-                        .onFocusChanged { searchFocused = it.isFocused },
-                    singleLine = true,
-                    placeholder = { Text("搜索作品、番号、演员或标签") },
-                    keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { vm.search() })
-                )
-                Button(onClick = { vm.search() }, modifier = Modifier.height(50.dp)) {
-                    Text("搜索")
+        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+            // Separate fixed-height player and independently scrollable library.
+            // Never nest a LazyVerticalGrid inside a vertically scrolling Column.
+            val viewportHeight = maxHeight
+            val viewportWidth = maxWidth
+            val playerHeight = minOf(viewportHeight * 0.55f,
+                viewportWidth * 9f / 16f + 82.dp)
+            Column(
+                Modifier.fillMaxSize().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = vm.searchQuery,
+                        onValueChange = { vm.searchQuery = it },
+                        modifier = Modifier.weight(1f)
+                            .onFocusChanged { searchFocused = it.isFocused },
+                        singleLine = true,
+                        placeholder = { Text("搜索作品、番号、演员或标签") },
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { vm.search() })
+                    )
+                    Button(onClick = { vm.search() }) { Text("搜索") }
+                    OutlinedButton(onClick = { vm.showQueue = !vm.showQueue }) {
+                        Text(if (vm.showQueue) "收起列表" else "播放列表")
+                    }
                 }
-                OutlinedButton(onClick = { vm.showQueue = !vm.showQueue },
-                    modifier = Modifier.height(50.dp)) { Text("播放列表 ☷") }
-            }
-            if (vm.activeVideo != null || vm.playingVideo != null) {
-                PlayerPane(vm, fullscreen, toggleFullscreen)
-                DetailActions(vm)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(vm.displayTitle,
-                    style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.weight(1f))
-                Text(vm.status, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = { if (vm.showCategories) vm.browseCategories() else vm.refreshFeed() }) {
-                    Text("刷新")
+                if (vm.activeVideo != null || vm.playingVideo != null) {
+                    PlayerPane(vm, fullscreen = false,
+                        toggleFullscreen = toggleFullscreen,
+                        playerHeight = playerHeight)
+                    // Playback settings are scrollable independently, even
+                    // with a small window and many providers/parts.
+                    Box(Modifier.fillMaxWidth().heightIn(max = 145.dp)
+                        .verticalScroll(rememberScrollState())) {
+                        DetailActions(vm)
+                    }
                 }
-            }
-            if (vm.showCategories) {
-                CategoryGrid(vm, Modifier.fillMaxWidth().height(620.dp))
-            } else {
-                key(vm.feedScrollKey) {
-                    PosterGrid(vm, Modifier.fillMaxWidth().height(650.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(vm.displayTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f))
+                    Text(vm.status, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        if (vm.showCategories) vm.browseCategories() else vm.refreshFeed()
+                    }) { Text("刷新") }
+                }
+                if (vm.showCategories) {
+                    CategoryGrid(vm, Modifier.fillMaxWidth().weight(1f))
+                } else {
+                    key(vm.feedScrollKey) {
+                        PosterGrid(vm, Modifier.fillMaxWidth().weight(1f))
+                    }
                 }
             }
         }
@@ -211,7 +227,7 @@ private fun NavButton(label: String, active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscreen: () -> Unit) {
+private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscreen: () -> Unit, playerHeight: Dp? = null) {
     var time by remember { mutableLongStateOf(0L) }
     var length by remember { mutableLongStateOf(0L) }
     var seek by remember { mutableFloatStateOf(0f) }
@@ -254,13 +270,15 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
     )
 
     Column(
-        (if (fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+        (if (fullscreen) Modifier.fillMaxSize() else if (playerHeight != null)
+            Modifier.fillMaxWidth().height(playerHeight) else Modifier.fillMaxWidth())
             .clip(RoundedCornerShape(10.dp))
             .background(Color(0xFF080908))
     ) {
         Box(
-            modifier = if (fullscreen) Modifier.fillMaxWidth().weight(1f)
-                       else Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            modifier = if (fullscreen || playerHeight != null)
+                Modifier.fillMaxWidth().weight(1f)
+            else Modifier.fillMaxWidth().aspectRatio(16f / 9f),
             contentAlignment = Alignment.Center
         ) {
             if (browserUrl != null) {
