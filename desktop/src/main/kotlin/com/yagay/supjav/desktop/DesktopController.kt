@@ -381,7 +381,9 @@ class DesktopController(
                 try {
                     val loaded = gateway.detail(video)
                     if (token != selectionRevision) return@launch
-                    val servers = PlaybackQueuePolicy.startingServers(loaded.servers, "auto")
+                    val servers = DesktopPlaybackOrder.nativeFirst(
+                        PlaybackQueuePolicy.startingServers(loaded.servers, "auto")
+                    )
                     if (servers.isEmpty()) {
                         status = "没有找到可用服务器，原视频保持不变"
                     } else if (!attemptPlay(video, loaded, servers.take(5), token)) {
@@ -469,10 +471,15 @@ class DesktopController(
     ): Boolean {
         for (server in servers) {
             if (token != selectionRevision) return false
-            if ((DesktopBrowserPolicy.preferBrowser(server) || !player.available) &&
-                launchBrowser(video, selectedDetail, server,
-                    if (player.available) "javascript-player" else "vlc-not-installed")) {
-                return true
+            if (DesktopBrowserPolicy.preferBrowser(server) || !player.available) {
+                if (servers.size == 1 || !player.available) {
+                    if (launchBrowser(video, selectedDetail, server,
+                            if (player.available) "javascript-player" else "vlc-not-installed"))
+                        return true
+                }
+                // In automatic playback, allow the native-capable lines to
+                // run first rather than jumping to EVS/WebView2 immediately.
+                continue
             }
             status = "解析线路 " + server.name
             val result = try {
@@ -514,11 +521,15 @@ class DesktopController(
             }
             Diagnostics.log("DESKTOP_SOURCE_UNAVAILABLE line=" + server.name +
                 " reason=" + result.javaClass.simpleName)
-            if (launchBrowser(video, selectedDetail, server, "no-native-source")) {
+            if (servers.size == 1 &&
+                launchBrowser(video, selectedDetail, server, "no-native-source"))
                 return true
-            }
         }
-        return false
+        // Automatic playback: only fall back to WebView after native mirrors
+        // have been checked, and do so with the exact selected site's page.
+        return servers.firstOrNull()?.let { fallback ->
+            launchBrowser(video, selectedDetail, fallback, "native-mirrors-exhausted")
+        } ?: false
     }
 
     fun changePart(part: String) {
