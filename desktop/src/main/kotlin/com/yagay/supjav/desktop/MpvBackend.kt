@@ -149,16 +149,18 @@ class MpvBackend : DesktopNativePlayer {
         val api = native ?: return false
         if (!source.url.startsWith("https://") ||
             !source.referer.startsWith("https://")) return false
-        val windowId = withTimeoutOrNull(8_000L) {
-            while (true) {
-                val result = withContext(Dispatchers.Swing) {
+        val windowId: Long? = withTimeoutOrNull(8_000L) {
+            var attachedId: Long? = null
+            while (attachedId == null) {
+                val result: Long? = withContext(Dispatchers.Swing) {
                     if (surface.isDisplayable && surface.isShowing)
                         runCatching { Native.getComponentID(surface) }.getOrNull()
                     else null
                 }
-                if (result != null && result != 0L) return@withTimeoutOrNull result
-                delay(60)
+                if (result != null && result != 0L) attachedId = result
+                else delay(60L)
             }
+            attachedId
         }
         if (windowId == null) {
             dispatch {
