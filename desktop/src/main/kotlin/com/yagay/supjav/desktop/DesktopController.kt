@@ -71,6 +71,12 @@ class DesktopController(
         private set
     var source by mutableStateOf<PlaybackSource?>(null)
         private set
+    var browserPageUrl by mutableStateOf<String?>(null)
+        private set
+    var browserSession by mutableIntStateOf(0)
+        private set
+    var browserVideo by mutableStateOf<VideoItem?>(null)
+        private set
 
     var status by mutableStateOf("就绪")
         private set
@@ -398,6 +404,34 @@ class DesktopController(
         }
     }
 
+    fun openEmbeddedBrowserForCurrent() {
+        val video = activeVideo ?: playingVideo ?: return
+        val loaded = detail ?: return
+        val server = activeServer ?: loaded.servers.firstOrNull() ?: return
+        launchBrowser(video, loaded, server, "manual")
+    }
+
+    private fun launchBrowser(
+        video: VideoItem, loaded: VideoDetail, server: VideoServer, reason: String
+    ): Boolean {
+        val safe = DesktopBrowserPolicy.siteDetailUrl(video) ?: return false
+        player.stop()
+        browserPageUrl = safe
+        browserVideo = video
+        browserSession++
+        playingVideo = null
+        source = null
+        activeVideo = video
+        detail = loaded
+        activeServer = server
+        status = "内置 Edge 网页播放 · " + server.name +
+            "（请在页面内点击播放）"
+        saveRecent(video)
+        Diagnostics.log("DESKTOP_BROWSER_FALLBACK video=" + video.id +
+            " server=" + server.name + " reason=" + reason)
+        return true
+    }
+
     /** Manual server switch also resolves before replacing the playing item. */
     fun play(server: VideoServer) {
         val target = activeVideo ?: return
@@ -435,6 +469,10 @@ class DesktopController(
     ): Boolean {
         for (server in servers) {
             if (token != selectionRevision) return false
+            if (DesktopBrowserPolicy.preferBrowser(server) &&
+                launchBrowser(video, selectedDetail, server, "javascript-player")) {
+                return true
+            }
             status = "解析线路 " + server.name
             val result = try {
                 gateway.resolve(server)
@@ -446,6 +484,8 @@ class DesktopController(
             }
             if (token != selectionRevision) return false
             if (result is ResolveResult.Playable && player.play(result.source)) {
+                browserPageUrl = null
+                browserVideo = null
                 playingVideo = video
                 activeVideo = video
                 detail = selectedDetail
@@ -459,6 +499,9 @@ class DesktopController(
             }
             Diagnostics.log("DESKTOP_SOURCE_UNAVAILABLE line=" + server.name +
                 " reason=" + result.javaClass.simpleName)
+            if (launchBrowser(video, selectedDetail, server, "no-native-source")) {
+                return true
+            }
         }
         return false
     }
