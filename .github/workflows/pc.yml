@@ -40,9 +40,14 @@ jobs:
             $view = $database.OpenView("SELECT Value FROM Property WHERE Property = '$property'")
             $view.Execute()
             $record = $view.Fetch()
+            if ($null -eq $record) {
+              $view.Close()
+              throw "Missing MSI property: $property"
+            }
+            # Read COM data before closing the MSI database cursor.
+            $value = [string]$record.StringData(1)
             $view.Close()
-            if ($null -eq $record) { throw "Missing MSI property: $property" }
-            return $record.StringData(1)
+            return $value.Trim()
           }
           $expectedVersion = "0.2.${{ github.run_number }}"
           $expectedUpgrade = "6980c41e-4740-523c-8ca1-c547c898fc39"
