@@ -8,7 +8,7 @@ A Windows-first desktop application based on the latest Android `main` source. T
 - Reuses **the exact pure Kotlin source files** from `../app/src/main/java` (no parser fork): listing, detail, CD-part grouping, mirror/line detection and the existing playback resolver.
 - Home, category directory, search, day/week/month rankings, infinite feed paging, posters with code, a right-hand poster playlist, previous/next video.
 - Local favorites and watching history with atomic JSON files, including migration from legacy Java Preferences (avoids the 8 KB per-value limit).
-- VLCJ native playback for playable HLS/MP4 responses, including the selected HTTP Referer. A desktop-only diagnostics adapter redacts links and tokens.
+- Dual playback engines: VLCJ for verified HLS/MP4 streams, embedded Windows Edge WebView2 for JavaScript-based EVS/LUC and unsupported native lines. User-selected site pages run in a real browser/iframe context; no membership or verification bypass. A desktop-only diagnostics adapter redacts links and tokens.
 - Single-touch/AWT gesture prototype: tap show/hide controls, double tap left/right -/+10s, hold side for temporary 2x (restore prior speed), horizontal swipe for timeline preview/commit, vertical left/right for video brightness/audio level with stable gesture baselines.
 - Windows installer job; no dependence on Android SDK for this desktop Gradle project.
 - A playback state driven by real VLC native events (loading, buffering, playing, paused, finished, error).
@@ -18,9 +18,11 @@ A Windows-first desktop application based on the latest Android `main` source. T
 ## Requirements
 
 - Windows 10/11 x64, JDK 17 for local development, Gradle 9.4.1.
-- **64-bit VLC 3.x must be installed separately** for the native player. VLC/libVLC is not bundled in the installer. Install VLC from the official VideoLAN source and restart the desktop app.
+- **64-bit VLC 3.x** is required for native HLS/MP4 playback and must be installed separately. VLC/libVLC is not bundled.
+- **Microsoft Edge WebView2 Runtime** is required for integrated website playback. It normally ships with current Windows 11; on Windows 10 install Microsoft's Evergreen WebView2 Runtime. This app bundles the small Java-to-native integration, not a second Chromium engine.
 - Touchscreen works as single-pointer mouse input in current Compose Desktop/AWT. Multitouch pinch or gesture navigation is not implemented.
-- Some server lines are website-only; use **网页兼容播放** to open the real Supjav detail page in the system browser. This initial desktop version does **not** embed WebView2 or auto-bypass website verification.
+- EVS and LUC default to **in-player WebView2 mode**, because their video URL may be generated dynamically in JavaScript. Other lines try the VLC resolver, then fall back to in-player WebView2 if no native URL can be used. The **外部浏览器** button remains available.
+- Browser mode loads the selected **Supjav detail page** to preserve the legitimate iframe and referrer chain. You may need to click Play in the embedded page and complete ordinary site verification. Website-controlled behavior/advertising cannot be guaranteed or bypassed.
 - VLCJ and libVLC have their own licensing and redistribution conditions. Review before producing a public release that bundles native libraries.
 
 ## Build / run
@@ -101,3 +103,11 @@ The PC CI runs shared parser tests, persistence tests, gesture mapping tests
 and a fake-site test for stale pagination and playlist isolation before MSI
 packaging. Native video playback and physical touchscreen controls must still
 be checked on a real Windows device.
+
+### Playback diagnostics
+
+When reporting a black screen, open the left sidebar's diagnostics folder and
+attach `events.log`. Native attempts include `DESKTOP_PLAY_REQUEST` or
+`DESKTOP_SOURCE_UNAVAILABLE`; browser fallback emits `DESKTOP_BROWSER_FALLBACK`
+and initialization emits `DESKTOP_WEBVIEW_CREATED` or
+`DESKTOP_WEBVIEW_INIT_FAILED`. These records contain no media token or signed URL.
