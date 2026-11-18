@@ -55,6 +55,46 @@ class DesktopControllerTest {
         DesktopController(VlcBackend(discoverNative = false), gateway,
             DesktopVideoStore(temp.newFolder().toPath()))
 
+    @Test fun evsOpensEmbeddedBrowserWithoutWaitingForNativeResolver() {
+        val video = movie("472994")
+        val evs = VideoServer(
+            id = "evs", name = "EVS", link = "testToken",
+            detailUrl = video.detailUrl
+        )
+        var nativeResolveCalls = 0
+        val browserGateway = object : DesktopGateway {
+            override suspend fun page(
+                kind: FeedKind, value: String, number: Int, cursor: String?
+            ) = SupjavSource.ListingPage(listOf(video), null, false)
+
+            override suspend fun detail(video: VideoItem) = VideoDetail(
+                video, "", emptyList(), emptyList(), listOf(evs), emptyList()
+            )
+
+            override suspend fun categories() = emptyList<SupjavSource.BrowseOption>()
+
+            override suspend fun resolve(server: VideoServer): ResolveResult {
+                nativeResolveCalls++
+                return ResolveResult.Unavailable("needs JavaScript")
+            }
+        }
+        val vm = controller(browserGateway)
+        try {
+            vm.open(video)
+            awaitCondition("detail has EVS server") {
+                vm.detail?.servers?.firstOrNull()?.name == "EVS"
+            }
+            vm.play(evs)
+            awaitCondition("browser selected") {
+                vm.browserPageUrl == video.detailUrl && !vm.switching
+            }
+            assertEquals(0, nativeResolveCalls)
+            assertEquals(video.id, vm.browserVideo?.id)
+            assertNull(vm.playingVideo)
+            assertTrue(vm.status.contains("网页播放"))
+        } finally { vm.close() }
+    }
+
     @Test fun newFeedIsNotBlockedByLoadingOldFeed() {
         val fake = StubGateway { kind ->
             if (kind == FeedKind.LATEST) 350L else 10L
