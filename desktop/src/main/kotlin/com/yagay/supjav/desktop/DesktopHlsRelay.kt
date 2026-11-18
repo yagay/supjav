@@ -47,12 +47,16 @@ internal class DesktopHlsRelay(private val source: PlaybackSource) : AutoCloseab
     init {
         server.executor = executor
         server.createContext("/hls/$token/") { exchange ->
+            var stage = "decode"
+            var remoteHost = "unknown"
             try {
                 if (exchange.requestMethod != "GET" && exchange.requestMethod != "HEAD")
                     throw IOException("Unsupported method")
                 val encoded = exchange.requestURI.rawPath.substringAfterLast('/')
                 val remote = String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8)
                 requireSafe(remote)
+                remoteHost = URI(remote).host.orEmpty()
+                stage = "upstream"
                 var current = remote
                 var response: okhttp3.Response? = null
                 for (hop in 0..5) {
@@ -68,6 +72,8 @@ internal class DesktopHlsRelay(private val source: PlaybackSource) : AutoCloseab
                         it.matches(Regex("bytes=\\d*-\\d*"))
                     }?.let { builder.header("Range", it) }
                     val next = client.newCall(builder.build()).execute()
+                    Diagnostics.log("DESKTOP_HLS_UPSTREAM host=" + URI(current).host +
+                        " status=" + next.code + " hop=" + hop)
                     if (next.code in listOf(301, 302, 303, 307, 308)) {
                         val location = next.header("Location") ?: throw IOException("Redirect missing location")
                         val nextUrl = URI(current).resolve(location).toString()
@@ -81,9 +87,12 @@ internal class DesktopHlsRelay(private val source: PlaybackSource) : AutoCloseab
                 }
                 val result = response ?: throw IOException("Too many redirects")
                 result.use { upstream ->
+                    stage = "response"
+                    if (!upstream.isSuccessful) throw IOException("Upstream HTTP " + upstream.code)
                     val body = upstream.body ?: throw IOException("Empty upstream response")
                     val contentType = upstream.header("Content-Type").orEmpty()
-                    val isPlaylist = current.substringBefore('?').endsWith(".m3u8", true) ||
+                    val isPlaylist = remote == source.url ||
+                        current.substringBefore('?').endsWith(".m3u8", true) ||
                         contentType.contains("mpegurl", true) || contentType.contains("vnd.apple.mpegurl", true)
                     exchange.responseHeaders.add("Content-Type",
                         if (isPlaylist) "application/vnd.apple.mpegurl" else
@@ -96,13 +105,17 @@ internal class DesktopHlsRelay(private val source: PlaybackSource) : AutoCloseab
                         exchange.responseHeaders.add("Accept-Ranges", it)
                     }
                     if (isPlaylist) {
+                        stage = "manifest"
                         val text = body.string()
                         if (!text.trimStart().startsWith("#EXTM3U"))
                             throw IOException("Invalid HLS manifest")
+                        stage = "rewrite"
                         val payload = rewrite(text, current).toByteArray(StandardCharsets.UTF_8)
-                        exchange.sendResponseHeaders(upstream.code, payload.size.toLong())
+                        stage = "send-manifest"
+                        exchange.sendResponseHeaders(200, payload.size.toLong())
                         exchange.responseBody.use { it.write(payload) }
                     } else {
+                        stage = "send-segment"
                         // Media segments may be very large. Stream them instead
                         // of loading the whole segment into the Java heap.
                         exchange.sendResponseHeaders(upstream.code, 0)
@@ -112,7 +125,10 @@ internal class DesktopHlsRelay(private val source: PlaybackSource) : AutoCloseab
                     }
                 }
             } catch (error: Exception) {
-                Diagnostics.log("DESKTOP_HLS_RELAY_ERROR type=" + error.javaClass.simpleName)
+                Diagnostics.log("DESKTOP_HLS_RELAY_ERROR stage=" + stage +
+                    " host=" + remoteHost + " type=" + error.javaClass.simpleName +
+                    " reason=" + error.message.orEmpty()
+                        .replace(Regex("(?i)https?://\\S+"), "[URL]").take(120))
                 runCatching { exchange.sendResponseHeaders(502, -1) }
             } finally {
                 exchange.close()
