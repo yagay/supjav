@@ -163,7 +163,7 @@ class VlcBackend : AutoCloseable {
             feedback = "音量 " + volumePercent() + "%"
         }
     }
-    fun setBrightness(value: Float) {
+    fun updateBrightness(value: Float) {
         val normalized = value.coerceIn(0.1f, 1f)
         runCatching {
             val video = component?.mediaPlayer()?.video() ?: return
@@ -177,7 +177,7 @@ class VlcBackend : AutoCloseable {
         setVolumePercent((volumePercent() + delta * 100).roundToInt())
     }
     fun brightnessChange(delta: Float) {
-        setBrightness(brightness + delta)
+        updateBrightness(brightness + delta)
     }
     override fun close() {
         runCatching {
@@ -281,7 +281,7 @@ class DesktopTouchGestures(
             Gesture.BRIGHTNESS -> {
                 val value = initialBrightness -
                     dy / host.height.coerceAtLeast(1) * .9f
-                player.setBrightness(value)
+                player.updateBrightness(value)
             }
             Gesture.VOLUME -> {
                 val value = initialVolume -
