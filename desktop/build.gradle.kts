@@ -74,6 +74,9 @@ compose.desktop {
         mainClass = "com.yagay.supjav.desktop.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+            // Required by DesktopHlsRelay in packaged jlink runtime.
+            // Without it the Windows MSI throws NoClassDefFoundError at playback.
+            modules("jdk.httpserver")
             packageName = "SupjavDesktop"
             packageVersion = desktopPackageVersion
             description = "Supjav desktop browsing and playback"
