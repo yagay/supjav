@@ -30,24 +30,25 @@ enum class PlayerPhase {
 }
 
 /** VLCJ player with real native playback events, never optimistic playing flags. */
-class VlcBackend(private val discoverNative: Boolean = true) : AutoCloseable {
-    val component: EmbeddedMediaPlayerComponent? = runCatching {
+class VlcBackend(private val discoverNative: Boolean = true) : DesktopNativePlayer {
+    override val engineName: String = "VLC"
+    override val component: EmbeddedMediaPlayerComponent? = runCatching {
         if (!discoverNative || !NativeDiscovery().discover()) null
         else EmbeddedMediaPlayerComponent()
     }.onFailure {
         Diagnostics.log("DESKTOP_VLC_UNAVAILABLE type=" + it.javaClass.simpleName)
     }.getOrNull()
 
-    val available get() = component != null
-    var phase by mutableStateOf(PlayerPhase.IDLE)
+    override val available get() = component != null
+    override var phase by mutableStateOf(PlayerPhase.IDLE)
         private set
-    val playing get() = phase == PlayerPhase.PLAYING || phase == PlayerPhase.BUFFERING
-    var errorMessage by mutableStateOf<String?>(null)
+    override val playing get() = phase == PlayerPhase.PLAYING || phase == PlayerPhase.BUFFERING
+    override var errorMessage by mutableStateOf<String?>(null)
         private set
-    var feedback by mutableStateOf("")
-    var brightness by mutableStateOf(0.5f)
+    override var feedback by mutableStateOf("")
+    override var brightness by mutableStateOf(0.5f)
         private set
-    var playbackRate by mutableStateOf(1f)
+    override var playbackRate by mutableStateOf(1f)
         private set
 
     private fun dispatch(update: () -> Unit) {
@@ -111,7 +112,7 @@ class VlcBackend(private val discoverNative: Boolean = true) : AutoCloseable {
      * Wait for a visible, heavyweight Canvas handle rather than catching the
      * resulting exception and incorrectly labelling the URL browser-only.
      */
-    suspend fun playWhenSurfaceReady(source: PlaybackSource): Boolean {
+    override suspend fun playWhenSurfaceReady(source: PlaybackSource): Boolean {
         val c = component ?: return play(source)
         val ready = withTimeoutOrNull(8_000L) {
             while (true) {
@@ -170,12 +171,12 @@ class VlcBackend(private val discoverNative: Boolean = true) : AutoCloseable {
         }
     }
 
-    fun stop() {
+    override fun stop() {
         runCatching { component?.mediaPlayer()?.controls()?.stop() }
         phase = PlayerPhase.STOPPED
     }
 
-    fun toggle() {
+    override fun toggle() {
         val media = component?.mediaPlayer() ?: return
         runCatching {
             if (phase == PlayerPhase.PLAYING || phase == PlayerPhase.BUFFERING)
@@ -184,35 +185,35 @@ class VlcBackend(private val discoverNative: Boolean = true) : AutoCloseable {
             // The event listener, not this click, owns the phase.
         }
     }
-    fun seek(deltaMs: Long) {
+    override fun seek(deltaMs: Long) {
         runCatching { component?.mediaPlayer()?.controls()?.skipTime(deltaMs) }
     }
-    fun position(): Long = runCatching {
+    override fun position(): Long = runCatching {
         component?.mediaPlayer()?.status()?.time() ?: 0L
     }.getOrDefault(0L)
-    fun duration(): Long = runCatching {
+    override fun duration(): Long = runCatching {
         component?.mediaPlayer()?.status()?.length() ?: 0L
     }.getOrDefault(0L)
-    fun seekTo(ms: Long) {
+    override fun seekTo(ms: Long) {
         runCatching { component?.mediaPlayer()?.controls()?.setTime(ms.coerceAtLeast(0L)) }
     }
-    fun speed(rate: Float) {
+    override fun speed(rate: Float) {
         if (!rate.isFinite() || rate !in 0.5f..4f) return
         runCatching {
             if (component?.mediaPlayer()?.controls()?.setRate(rate) == true)
                 playbackRate = rate
         }
     }
-    fun volumePercent(): Int = runCatching {
+    override fun volumePercent(): Int = runCatching {
         component?.mediaPlayer()?.audio()?.volume()?.coerceIn(0, 100) ?: 50
     }.getOrDefault(50)
-    fun setVolumePercent(value: Int) {
+    override fun setVolumePercent(value: Int) {
         runCatching {
             component?.mediaPlayer()?.audio()?.setVolume(value.coerceIn(0, 100))
             feedback = "音量 " + volumePercent() + "%"
         }
     }
-    fun updateBrightness(value: Float) {
+    override fun updateBrightness(value: Float) {
         val normalized = value.coerceIn(0.1f, 1f)
         runCatching {
             val video = component?.mediaPlayer()?.video() ?: return
@@ -243,7 +244,7 @@ class VlcBackend(private val discoverNative: Boolean = true) : AutoCloseable {
  */
 class DesktopTouchGestures(
     private val host: Component,
-    private val player: VlcBackend,
+    private val player: DesktopNativePlayer,
     private val toggleChrome: () -> Unit
 ) : MouseAdapter() {
     private enum class Gesture { NONE, SEEK, VOLUME, BRIGHTNESS }
