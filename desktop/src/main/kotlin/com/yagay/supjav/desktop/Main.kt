@@ -168,7 +168,7 @@ private fun DesktopScreen(
             if (vm.showCategories) {
                 CategoryGrid(vm, Modifier.weight(1f))
             } else {
-                key(vm.displayTitle) {
+                key(vm.feedScrollKey) {
                     PosterGrid(vm, Modifier.weight(1f))
                 }
             }
