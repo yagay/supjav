@@ -41,7 +41,11 @@ internal fun DetailActions(vm: DesktopController) {
                 Text(if (vm.activeVideo?.id?.let(vm::isFavorite) == true)
                     "取消收藏" else "收藏")
             }
-            TextButton(onClick = vm::openOfficialPage) { Text("网页兼容播放") }
+            TextButton(
+                onClick = vm::openEmbeddedBrowserForCurrent,
+                enabled = vm.detail?.servers?.isNotEmpty() == true
+            ) { Text("内置网页播放") }
+            TextButton(onClick = vm::openOfficialPage) { Text("外部浏览器") }
         }
         if (vm.playingVideo != null && vm.playingVideo?.id != vm.activeVideo?.id) {
             Text("正在播放：" + vm.playingVideo?.title.orEmpty(),
@@ -51,6 +55,12 @@ internal fun DetailActions(vm: DesktopController) {
             Text("准备切换：" + vm.pendingVideo?.title.orEmpty(),
                 style = MaterialTheme.typography.labelSmall, color = green)
         }
+        Text(
+            vm.status,
+            color = if (vm.browserPageUrl != null) green else Color.LightGray,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2
+        )
         if (detail == null) {
             Text(vm.status, color = Color.LightGray,
                 style = MaterialTheme.typography.bodySmall)
