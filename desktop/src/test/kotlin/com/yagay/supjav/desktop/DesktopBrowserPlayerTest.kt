@@ -31,6 +31,13 @@ class DesktopBrowserPlayerTest {
         ).forEach { assertNull(DesktopBrowserPolicy.siteDetailUrl(video(it))) }
     }
 
+    @Test fun siteLineSelectionAcceptsOnlyOpaqueAsciiTokens() {
+        assertEquals("abc-XYZ_123", DesktopBrowserPolicy.safeSiteToken("abc-XYZ_123"))
+        assertNull(DesktopBrowserPolicy.safeSiteToken("x' ; window.alert(1)"))
+        assertNull(DesktopBrowserPolicy.safeSiteToken("https://other.example/path"))
+        assertNull(DesktopBrowserPolicy.safeSiteToken("a"))
+    }
+
     @Test fun javascriptHeavyLinesUseWebViewWhileNativeMirrorsKeepVlc() {
         fun server(name: String) = VideoServer(
             id = name, name = name, link = "safetoken",
