@@ -7,10 +7,13 @@ A Windows-first desktop application based on the latest Android `main` source. T
 - Kotlin / Compose Desktop application, with a responsive Windows layout.
 - Reuses **the exact pure Kotlin source files** from `../app/src/main/java` (no parser fork): listing, detail, CD-part grouping, mirror/line detection and the existing playback resolver.
 - Home, category directory, search, day/week/month rankings, infinite feed paging, posters with code, a right-hand poster playlist, previous/next video.
-- Local favorites and watching history (Java Preferences).
+- Local favorites and watching history with atomic JSON files, including migration from legacy Java Preferences (avoids the 8 KB per-value limit).
 - VLCJ native playback for playable HLS/MP4 responses, including the selected HTTP Referer. A desktop-only diagnostics adapter redacts links and tokens.
-- Single-touch/AWT gesture prototype: tap show/hide controls, double tap left/right -/+10s, hold side for temporary 2x, horizontal swipe for timeline preview/commit, vertical left/right for video brightness/audio level.
+- Single-touch/AWT gesture prototype: tap show/hide controls, double tap left/right -/+10s, hold side for temporary 2x (restore prior speed), horizontal swipe for timeline preview/commit, vertical left/right for video brightness/audio level with stable gesture baselines.
 - Windows installer job; no dependence on Android SDK for this desktop Gradle project.
+- A playback state driven by real VLC native events (loading, buffering, playing, paused, finished, error).
+- Independent page and playlist pagination, cached feed navigation and per-feed scroll position, stale async request cancellation.
+- Dedicated player-only fullscreen, search-focus-aware keyboard shortcuts, expanded actor/maker/tag directory and redacted disk diagnostics.
 
 ## Requirements
 
@@ -39,10 +42,14 @@ app/                         Android version (no changes)
 desktop/
   build.gradle.kts            Standalone JVM/Compose desktop Gradle build
   src/main/kotlin/
-    .../desktop/Main.kt       Windows navigation, poster browser and controls
-    .../desktop/DesktopController.kt  Feed/queue/pagination/resolve logic
-    .../desktop/VlcBackend.kt         Native video + one-finger gestures
-    .../util/Diagnostics.kt   Desktop-specific safe diagnostics
+    .../desktop/Main.kt           Window/navigation/fullscreen/player controls
+    .../desktop/DesktopLibraryUi.kt Detail, poster browser and playlist panel
+    .../desktop/DesktopController.kt  Feed, queue, cancellation and switching
+    .../desktop/DesktopGateway.kt Testable site/resolve boundary
+    .../desktop/DesktopVideoStore.kt Atomic JSON history and favorites
+    .../desktop/DesktopGestureMath.kt Pure gesture calculations
+    .../desktop/VlcBackend.kt Native VLC events and AWT input adapter
+    .../util/Diagnostics.kt Redacted rotating desktop diagnostics
 ```
 
 The desktop Gradle compile task links selected pure-Kotlin files from `app/`. Both platforms share parsing semantics and fixes; Android-specific Material3 UI, Android persistence, Media3 and SystemUI classes are **not** imported into desktop.
@@ -50,3 +57,20 @@ The desktop Gradle compile task links selected pure-Kotlin files from `app/`. Bo
 ## Current limitations / follow-up
 
 Native playback depends on a locally installed libVLC and the site's authorization/expiry rules; not every streaming host can be played outside its website. Physical Windows touchscreen testing, hardware video brightness behavior and the packaged native player must be verified on the target device. Future upgrades can introduce WebView2 and a native Windows WM_POINTER adapter for multi-finger gestures without rewriting the shared parser or desktop pages.
+
+## Data and diagnostics
+
+History and favorites are stored in `%LOCALAPPDATA%\SupjavDesktop\recent.json` and
+`favorites.json`. They are local files and not synced with the Android app.
+Open the diagnostics directory from the application's left navigation;
+the log rotates between `events.log` and `events.previous.log`. Logged URLs
+and secrets are redacted. If the site sends a verification challenge or
+native VLC cannot send the same browser headers, try another server or
+the explicit browser fallback. No anti-verification bypass is attempted.
+
+## Validation
+
+The PC CI runs shared parser tests, persistence tests, gesture mapping tests
+and a fake-site test for stale pagination and playlist isolation before MSI
+packaging. Native video playback and physical touchscreen controls must still
+be checked on a real Windows device.
