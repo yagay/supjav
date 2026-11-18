@@ -129,7 +129,7 @@ internal class DesktopHlsRelay(private val source: PlaybackSource) : AutoCloseab
             if (line.startsWith("#")) {
                 Regex("""URI="([^"]+)"""").replace(line) { match ->
                     val absolute = URI(base).resolve(match.groupValues[1]).toString()
-                    "URI=\\"" + localUrl(absolute) + "\\""
+                    "URI=" + 34.toChar() + localUrl(absolute) + 34.toChar()
                 }
             } else if (line.isBlank()) line
             else localUrl(URI(base).resolve(line.trim()).toString())
