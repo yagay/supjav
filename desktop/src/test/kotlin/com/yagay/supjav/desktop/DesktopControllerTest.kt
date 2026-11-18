@@ -15,7 +15,7 @@ class DesktopControllerTest {
         id = id, title = "Video $id", detailUrl = "https://supjav.com/$id.html"
     )
 
-    private class StubGateway(
+    private inner class StubGateway(
         val pageDelay: suspend (FeedKind) -> Long = { 0L }
     ) : DesktopGateway {
         val calls = mutableListOf<Pair<FeedKind, Int>>()
