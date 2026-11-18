@@ -22,9 +22,11 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
       - name: Build desktop tests and Windows installer
         shell: pwsh
-        run: .\gradlew.bat -p desktop --no-daemon test packageMsi
+        run: gradle -p desktop --no-daemon test packageMsi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
