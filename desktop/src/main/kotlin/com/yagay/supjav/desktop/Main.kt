@@ -150,7 +150,7 @@ private fun DesktopScreen(
             // Never nest a LazyVerticalGrid inside a vertically scrolling Column.
             val viewportHeight = maxHeight
             val viewportWidth = maxWidth
-            val playerHeight = minOf(viewportHeight * 0.55f,
+            val playerHeight = minOf(viewportHeight * 0.46f,
                 viewportWidth * 9f / 16f + 82.dp)
             Column(
                 Modifier.fillMaxSize().padding(12.dp),
@@ -180,7 +180,7 @@ private fun DesktopScreen(
                         playerHeight = playerHeight)
                     // Playback settings are scrollable independently, even
                     // with a small window and many providers/parts.
-                    Box(Modifier.fillMaxWidth().heightIn(max = 145.dp)
+                    Box(Modifier.fillMaxWidth().heightIn(max = 116.dp)
                         .verticalScroll(rememberScrollState())) {
                         DetailActions(vm)
                     }
