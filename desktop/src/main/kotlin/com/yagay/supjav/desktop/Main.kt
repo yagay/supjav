@@ -25,6 +25,8 @@ import coil3.compose.AsyncImage
 import com.yagay.supjav.model.*
 import com.yagay.supjav.player.VideoParts
 import com.yagay.supjav.player.PlaybackQueuePolicy
+import com.yagay.supjav.util.Diagnostics
+import java.awt.Desktop
 import kotlinx.coroutines.delay
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -113,6 +115,12 @@ private fun DesktopScreen(
             NavButton("播放历史", vm.localListTitle == "播放历史") { vm.showLocalList("recent") }
             NavButton("我的收藏", vm.localListTitle == "我的收藏") { vm.showLocalList("favorites") }
             Spacer(Modifier.weight(1f))
+            TextButton(onClick = {
+                val logfile = Diagnostics.currentFile()
+                if (logfile != null && Desktop.isDesktopSupported()) {
+                    runCatching { Desktop.getDesktop().open(logfile.parent.toFile()) }
+                }
+            }) { Text("打开诊断日志目录") }
             Text("PC · 触屏 / 鼠标", color = Color.LightGray,
                 style = MaterialTheme.typography.labelSmall)
             if (!vm.player.available)
