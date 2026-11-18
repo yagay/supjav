@@ -228,7 +228,9 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
     ) {
         Box(
             if (fullscreen) Modifier.fillMaxWidth().weight(1f)
-            else Modifier.fillMaxWidth().height(300.dp),
+            else Modifier.fillMaxWidth().height(
+                if (browserUrl != null) 460.dp else 300.dp
+            ),
             contentAlignment = Alignment.Center
         ) {
             if (browserUrl != null) {
