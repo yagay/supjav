@@ -8,22 +8,23 @@ A Windows-first desktop application based on the latest Android `main` source. T
 - Reuses **the exact pure Kotlin source files** from `../app/src/main/java` (no parser fork): listing, detail, CD-part grouping, mirror/line detection and the existing playback resolver.
 - Home, category directory, search, day/week/month rankings, infinite feed paging, posters with code, a right-hand poster playlist, previous/next video.
 - Local favorites and watching history with atomic JSON files, including migration from legacy Java Preferences (avoids the 8 KB per-value limit).
-- Dual playback engines: VLCJ for verified HLS/MP4 streams, embedded Windows Edge WebView2 for JavaScript-based EVS/LUC and unsupported native lines. User-selected site pages run in a real browser/iframe context; no membership or verification bypass. A desktop-only diagnostics adapter redacts links and tokens.
+- Three playback paths: **embedded MPV** (preferred when installed), VLCJ fallback for verified HLS/MP4, and Edge WebView2 for JavaScript-only EVS/LUC lines. The MPV Java/JNA HWND embed approach follows official mpv-player/mpv-examples, and works with the existing Compose controls/gestures. Browser fallback preserves legitimate site verification and does not bypass access controls.
 - Single-touch/AWT gesture prototype: tap show/hide controls, double tap left/right -/+10s, hold side for temporary 2x (restore prior speed), horizontal swipe for timeline preview/commit, vertical left/right for video brightness/audio level with stable gesture baselines.
 - Windows installer job; no dependence on Android SDK for this desktop Gradle project.
-- A playback state driven by real VLC native events (loading, buffering, playing, paused, finished, error).
+- A playback state driven by MPV or VLC native events (loading, buffering, playing, paused, finished, error), with automatic native-engine fallback.
 - Independent page and playlist pagination, cached feed navigation and per-feed scroll position, stale async request cancellation.
 - Dedicated player-only fullscreen, search-focus-aware keyboard shortcuts, expanded actor/maker/tag directory and redacted disk diagnostics.
 
 ## Requirements
 
 - Windows 10/11 x64, JDK 17 for local development, Gradle 9.4.1.
-- **64-bit VLC 3.x** is required for native HLS/MP4 playback and must be installed separately. VLC/libVLC is not bundled.
+- **MPV (recommended)**: Install the official **LGPL x86_64 libmpv** release for Windows, placing `libmpv-2.dll` (and any DLL dependencies included with its release) in `%LOCALAPPDATA%\SupjavDesktop\mpv\`. The app checks this folder at launch, so restart it after copying. Official release: https://github.com/mpv-player/mpv/releases/tag/v0.42.0 (under **libmpv Windows → x86_64 LGPL**). Alternatively set the `SUPJAV_MPV_DLL` environment variable to the DLL's absolute path.
+- **64-bit VLC 3.x**: Fallback native engine; must be installed separately if you want VLC fallback. VLC/libVLC is not bundled.
 - **Microsoft Edge WebView2 Runtime** is required for integrated website playback. It normally ships with current Windows 11; on Windows 10 install Microsoft's Evergreen WebView2 Runtime. This app bundles the small Java-to-native integration, not a second Chromium engine.
 - Touchscreen works as single-pointer mouse input in current Compose Desktop/AWT. Multitouch pinch or gesture navigation is not implemented.
 - EVS and LUC default to **in-player WebView2 mode**, because their video URL may be generated dynamically in JavaScript. Other lines try the VLC resolver, then fall back to in-player WebView2 if no native URL can be used. The **外部浏览器** button remains available.
 - Browser mode loads the selected **Supjav detail page** to preserve the legitimate iframe and referrer chain. You may need to click Play in the embedded page and complete ordinary site verification. Website-controlled behavior/advertising cannot be guaranteed or bypassed.
-- VLCJ and libVLC have their own licensing and redistribution conditions. Review before producing a public release that bundles native libraries.
+- mpv official LGPL binaries are LGPLv3; VLC/libVLC also have their own redistribution terms. **This source currently does not package libmpv or libVLC DLLs into MSI**. Review legal notices/source availability before distributing native binaries.
 
 ## Build / run
 
@@ -77,7 +78,10 @@ desktop/
     .../desktop/DesktopGateway.kt Testable site/resolve boundary
     .../desktop/DesktopVideoStore.kt Atomic JSON history and favorites
     .../desktop/DesktopGestureMath.kt Pure gesture calculations
-    .../desktop/VlcBackend.kt Native VLC events and AWT input adapter
+    .../desktop/DesktopPlayerGroup.kt MPV → VLC selection and fallback
+    .../desktop/DesktopNativePlayer.kt Shared native controls contract
+    .../desktop/MpvBackend.kt JNA libmpv Windows HWND player
+    .../desktop/VlcBackend.kt VLC events and touch input adapter
     .../util/Diagnostics.kt Redacted rotating desktop diagnostics
 ```
 
@@ -85,7 +89,7 @@ The desktop Gradle compile task links selected pure-Kotlin files from `app/`. Bo
 
 ## Current limitations / follow-up
 
-Native playback depends on a locally installed libVLC and the site's authorization/expiry rules; not every streaming host can be played outside its website. Physical Windows touchscreen testing, hardware video brightness behavior and the packaged native player must be verified on the target device. Future upgrades can introduce WebView2 and a native Windows WM_POINTER adapter for multi-finger gestures without rewriting the shared parser or desktop pages.
+Native playback needs either official libmpv or installed libVLC. A successful HLS probe is not proof that a renderer can play the media; some streams enforce Origin/Referer or expiry. Physical Windows touch and packaged libmpv must be verified on a target device. The current embed uses AWT HWND (`wid`); a future GPU render API can be added for full Compose-native video overlays.
 
 ## Data and diagnostics
 
@@ -107,7 +111,20 @@ be checked on a real Windows device.
 ### Playback diagnostics
 
 When reporting a black screen, open the left sidebar's diagnostics folder and
-attach `events.log`. Native attempts include `DESKTOP_PLAY_REQUEST` or
+attach `events.log`. Native attempts include `DESKTOP_MPV_PLAY_REQUEST`, `DESKTOP_ENGINE_ATTEMPT`, `DESKTOP_PLAY_REQUEST` or
 `DESKTOP_SOURCE_UNAVAILABLE`; browser fallback emits `DESKTOP_BROWSER_FALLBACK`
 and initialization emits `DESKTOP_WEBVIEW_CREATED` or
 `DESKTOP_WEBVIEW_INIT_FAILED`. These records contain no media token or signed URL.
+
+## Upstream player references
+
+- [mpv-player/mpv-examples](https://github.com/mpv-player/mpv-examples/tree/master/libmpv/java): Java/JNA native HWND embedding technique (the native binding is adapted, not copied as an external application).
+- [AreChen/OpenPlayer](https://github.com/AreChen/OpenPlayer): separate video surface from UI overlays.
+- [jellyfin/jellyfin-desktop](https://github.com/jellyfin/jellyfin-desktop): libmpv playback inside a desktop application.
+- [numq/compose-desktop-media-player](https://github.com/numq/compose-desktop-media-player): multi-engine and Kotlin Compose player design.
+
+When testing a playable native line (e.g. VAS), select **原生优先播放**.
+Use the new **播放内核** choice to pick automatic / MPV / VLC. Only
+a detected native engine is attempted. With neither installed, use
+the original internal WebView2 path. EVS/LUC remain website-based until
+a direct playable media URL is legitimately resolved.
