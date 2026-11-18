@@ -60,6 +60,8 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.6.3")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
     implementation("uk.co.caprica:vlcj:4.11.0")
+    // Java/JNA bindings for embedded libmpv; no native DLL is downloaded at startup.
+    implementation("net.java.dev.jna:jna:5.17.0")
     // Windows Edge WebView2 for JS-dependent EVS/LUC/VAS provider pages.
     // No second Chromium bundle: Windows supplies the Evergreen WebView2 runtime.
     implementation("ca.weblite:webview:1.11.2")
