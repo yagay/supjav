@@ -52,7 +52,7 @@ class DesktopControllerTest {
     }
 
     private fun controller(gateway: DesktopGateway) =
-        DesktopController(VlcBackend(), gateway,
+        DesktopController(VlcBackend(discoverNative = false), gateway,
             DesktopVideoStore(temp.newFolder().toPath()))
 
     @Test fun newFeedIsNotBlockedByLoadingOldFeed() {
