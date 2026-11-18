@@ -235,7 +235,11 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
         ) {
             if (browserUrl != null) {
                 key(browserSession) {
-                    DesktopBrowserPlayer(browserUrl, Modifier.fillMaxSize())
+                    DesktopBrowserPlayer(
+                        browserUrl,
+                        vm.activeServer?.link,
+                        Modifier.fillMaxSize()
+                    )
                 }
             } else if (component == null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
