@@ -314,6 +314,19 @@ class DesktopController(
             queueEndReached = result.items.isEmpty() || queueDuplicatePages >= 2
             if (queueDuplicatePages >= 2)
                 queueError = "连续两页没有新作品，停止加载"
+            // If the original feed is still on screen, both views must
+            // advance the same cursor. Otherwise the feed could download
+            // the queue's page again and make Next appear stuck.
+            if (queueOriginRevision == feedRevision && localList == null &&
+                !showCategories && section == kind && sectionValue == value) {
+                val mainKnown = videos.mapTo(HashSet<String>()) { it.id }
+                videos.addAll(added.filter { mainKnown.add(it.id) })
+                page = maxOf(page, number)
+                cursor = queueCursor
+                reachedEnd = queueEndReached
+                duplicatePages = queueDuplicatePages
+                rememberCurrentFeed()
+            }
             Diagnostics.log("DESKTOP_QUEUE_PAGE page=" + number +
                 " added=" + added.size)
         } catch (cancel: CancellationException) {
