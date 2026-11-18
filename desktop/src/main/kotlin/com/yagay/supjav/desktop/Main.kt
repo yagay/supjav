@@ -101,7 +101,8 @@ private fun DesktopScreen(
         Row(Modifier.fillMaxSize()) {
         Column(
             Modifier.width(170.dp).fillMaxHeight()
-                .background(Color(0xFF171C16)).padding(14.dp),
+                .background(Color(0xFF171C16))
+                .verticalScroll(rememberScrollState()).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("SUPJAV", style = MaterialTheme.typography.headlineSmall,
@@ -116,7 +117,7 @@ private fun DesktopScreen(
             HorizontalDivider(Modifier.padding(vertical = 9.dp))
             NavButton("播放历史", vm.localListTitle == "播放历史") { vm.showLocalList("recent") }
             NavButton("我的收藏", vm.localListTitle == "我的收藏") { vm.showLocalList("favorites") }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(16.dp))
             TextButton(onClick = {
                 val logfile = Diagnostics.currentFile()
                 if (logfile != null && Desktop.isDesktopSupported()) {
@@ -144,7 +145,8 @@ private fun DesktopScreen(
                     color = Color(0xFFFFBBA9), style = MaterialTheme.typography.labelSmall)
         }
         Column(
-            Modifier.weight(1f).fillMaxHeight().padding(15.dp),
+            Modifier.weight(1f).fillMaxHeight()
+                .verticalScroll(rememberScrollState()).padding(15.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically,
@@ -182,10 +184,10 @@ private fun DesktopScreen(
                 }
             }
             if (vm.showCategories) {
-                CategoryGrid(vm, Modifier.weight(1f))
+                CategoryGrid(vm, Modifier.fillMaxWidth().height(620.dp))
             } else {
                 key(vm.feedScrollKey) {
-                    PosterGrid(vm, Modifier.weight(1f))
+                    PosterGrid(vm, Modifier.fillMaxWidth().height(650.dp))
                 }
             }
         }
