@@ -113,8 +113,10 @@ fun DesktopBrowserPlayer(
                         error.javaClass.simpleName)
                     JPanel(BorderLayout()).apply {
                         background = java.awt.Color.BLACK
-                        add(JLabel("Edge WebView2 初始化失败，请安装或修复 WebView2 Runtime"),
-                            BorderLayout.CENTER)
+                        add(JLabel("Edge WebView2 初始化失败，请安装或修复 WebView2 Runtime").apply {
+                            foreground = java.awt.Color.WHITE
+                            horizontalAlignment = JLabel.CENTER
+                        }, BorderLayout.CENTER)
                     }
                 }
             }
