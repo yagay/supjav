@@ -56,6 +56,6 @@ object Diagnostics {
     /** Returns a redacted, local diagnostics ZIP-free text file for support. */
     fun currentFile(): Path? = runCatching {
         writer.submit {}.get(5, TimeUnit.SECONDS)
-        file.takeIf(Files::exists)
+        file.takeIf { Files.exists(it) }
     }.getOrNull()
 }
