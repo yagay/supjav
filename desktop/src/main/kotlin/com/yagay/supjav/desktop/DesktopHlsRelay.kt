@@ -85,17 +85,31 @@ internal class DesktopHlsRelay(private val source: PlaybackSource) : AutoCloseab
                     val contentType = upstream.header("Content-Type").orEmpty()
                     val isPlaylist = current.substringBefore('?').endsWith(".m3u8", true) ||
                         contentType.contains("mpegurl", true) || contentType.contains("vnd.apple.mpegurl", true)
-                    val payload = if (isPlaylist) {
-                        val text = body.string()
-                        if (!text.trimStart().startsWith("#EXTM3U")) throw IOException("Invalid HLS manifest")
-                        rewrite(text, current).toByteArray(StandardCharsets.UTF_8)
-                    } else body.bytes()
                     exchange.responseHeaders.add("Content-Type",
                         if (isPlaylist) "application/vnd.apple.mpegurl" else
                             contentType.ifBlank { "application/octet-stream" })
                     exchange.responseHeaders.add("Cache-Control", "no-store")
-                    exchange.sendResponseHeaders(upstream.code, payload.size.toLong())
-                    exchange.responseBody.use { it.write(payload) }
+                    upstream.header("Content-Range")?.let {
+                        exchange.responseHeaders.add("Content-Range", it)
+                    }
+                    upstream.header("Accept-Ranges")?.let {
+                        exchange.responseHeaders.add("Accept-Ranges", it)
+                    }
+                    if (isPlaylist) {
+                        val text = body.string()
+                        if (!text.trimStart().startsWith("#EXTM3U"))
+                            throw IOException("Invalid HLS manifest")
+                        val payload = rewrite(text, current).toByteArray(StandardCharsets.UTF_8)
+                        exchange.sendResponseHeaders(upstream.code, payload.size.toLong())
+                        exchange.responseBody.use { it.write(payload) }
+                    } else {
+                        // Media segments may be very large. Stream them instead
+                        // of loading the whole segment into the Java heap.
+                        exchange.sendResponseHeaders(upstream.code, 0)
+                        exchange.responseBody.use { output ->
+                            body.byteStream().use { input -> input.copyTo(output, 64 * 1024) }
+                        }
+                    }
                 }
             } catch (error: Exception) {
                 Diagnostics.log("DESKTOP_HLS_RELAY_ERROR type=" + error.javaClass.simpleName)
