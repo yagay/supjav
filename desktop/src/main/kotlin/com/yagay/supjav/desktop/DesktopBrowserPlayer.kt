@@ -41,11 +41,19 @@ object DesktopBrowserPolicy {
         val line = server.name.trim().uppercase(Locale.ROOT)
         return line == "EVS" || line == "LUC"
     }
+
+    fun safeSiteToken(raw: String?): String? = raw?.takeIf {
+        it.matches(Regex("[A-Za-z0-9_-]{3,512}"))
+    }
 }
 
 /** Edge WebView2 on Windows, embedded inside the same Compose player pane. */
 @Composable
-fun DesktopBrowserPlayer(url: String, modifier: Modifier = Modifier) {
+fun DesktopBrowserPlayer(
+    url: String,
+    serverToken: String?,
+    modifier: Modifier = Modifier
+) {
     // One heavyweight WebView per active browser document. Do not reuse VLC's
     // AWT surface or cause setUrl() to reload on every Compose recomposition.
     key(url) {
@@ -70,6 +78,32 @@ fun DesktopBrowserPlayer(url: String, modifier: Modifier = Modifier) {
                         // Ad popups and unrelated new windows must never obscure
                         // the desktop application or spawn external pages.
                         setPopupHandler(null)
+                        // Select the same exact data-link button as Android.
+                        // Inject only opaque ASCII tokens on Supjav's OWN site,
+                        // never into unrelated frame origins.
+                        DesktopBrowserPolicy.safeSiteToken(serverToken)?.let { token ->
+                            addOnBeforeLoad("""
+                                (() => {
+                                  if (!['supjav.com','www.supjav.com']
+                                      .includes(location.hostname)) return;
+                                  document.addEventListener('DOMContentLoaded', () => {
+                                    let attempts = 0;
+                                    const timer = setInterval(() => {
+                                      const element = [...document.querySelectorAll(
+                                        'a[data-link],button[data-link]'
+                                      )].find(el => el.getAttribute('data-link') === '$token');
+                                      if (element) {
+                                        element.click();
+                                        element.scrollIntoView({
+                                          behavior:'instant', block:'center'
+                                        });
+                                        clearInterval(timer);
+                                      } else if (++attempts > 24) clearInterval(timer);
+                                    }, 250);
+                                  }, {once:true});
+                                })();
+                            """.trimIndent())
+                        }
                         setUrl(url)
                         peer.set(this)
                         Diagnostics.log("DESKTOP_WEBVIEW_CREATED host=supjav.com")
