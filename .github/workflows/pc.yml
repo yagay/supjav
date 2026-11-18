@@ -24,9 +24,39 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.4.1'
-      - name: Build desktop tests and Windows installer
+      - name: Build desktop tests and Windows upgrade installer
         shell: pwsh
-        run: gradle -p desktop --no-daemon test packageMsi
+        run: gradle -p desktop --no-daemon -PdesktopBuildNumber=${{ github.run_number }} test packageMsi
+      - name: Verify MSI upgrade version and product identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = Get-ChildItem "desktop/build/compose/binaries/main/msi/*.msi" |
+            Select-Object -First 1
+          if ($null -eq $msi) { throw "No Windows MSI built" }
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $database = $installer.OpenDatabase($msi.FullName, 0)
+          function Get-MsiProperty([string] $property) {
+            $view = $database.OpenView("SELECT Value FROM Property WHERE Property = '$property'")
+            $view.Execute()
+            $record = $view.Fetch()
+            $view.Close()
+            if ($null -eq $record) { throw "Missing MSI property: $property" }
+            return $record.StringData(1)
+          }
+          $expectedVersion = "0.2.${{ github.run_number }}"
+          $expectedUpgrade = "6980c41e-4740-523c-8ca1-c547c898fc39"
+          $version = Get-MsiProperty "ProductVersion"
+          $upgrade = Get-MsiProperty "UpgradeCode"
+          Write-Output "Installer: $($msi.Name)"
+          Write-Output "ProductVersion: $version"
+          Write-Output "UpgradeCode: $upgrade"
+          if ($version -ne $expectedVersion) {
+            throw "Version mismatch: expected $expectedVersion, got $version"
+          }
+          if ($upgrade.Trim('{}').ToLowerInvariant() -ne $expectedUpgrade) {
+            throw "UpgradeCode mismatch: expected $expectedUpgrade, got $upgrade"
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
