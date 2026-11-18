@@ -46,8 +46,9 @@ jobs:
           }
           $expectedVersion = "0.2.${{ github.run_number }}"
           $expectedUpgrade = "6980c41e-4740-523c-8ca1-c547c898fc39"
-          $version = Get-MsiProperty "ProductVersion"
-          $upgrade = Get-MsiProperty "UpgradeCode"
+          # Windows Installer COM returns padded strings for some properties.
+          $version = (Get-MsiProperty "ProductVersion").Trim()
+          $upgrade = (Get-MsiProperty "UpgradeCode").Trim()
           Write-Output "Installer: $($msi.Name)"
           Write-Output "ProductVersion: $version"
           Write-Output "UpgradeCode: $upgrade"
