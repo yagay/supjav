@@ -38,7 +38,7 @@ internal val green = Color(0xFFBCE6AC)
 
 fun main() = application {
     val state = rememberWindowState(width = 1300.dp, height = 850.dp)
-    val engine = remember { VlcBackend() }
+    val engine = remember { DesktopPlayerGroup() }
     val vm = remember { DesktopController(engine) }
     DisposableEffect(vm) { onDispose { vm.close() } }
     Window(
@@ -125,7 +125,7 @@ private fun DesktopScreen(
             Text("PC · 触屏 / 鼠标", color = Color.LightGray,
                 style = MaterialTheme.typography.labelSmall)
             if (!vm.player.available)
-                Text("未检测到 VLC 3.x，浏览仍可使用",
+                Text("未检测到 MPV 或 VLC，网页播放仍可使用",
                     color = Color(0xFFFFBBA9), style = MaterialTheme.typography.labelSmall)
         }
         Column(
