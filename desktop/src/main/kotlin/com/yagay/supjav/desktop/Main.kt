@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,10 +67,11 @@ private fun DesktopScreen(
     toggleFullscreen: () -> Unit
 ) {
     val focusColor = MaterialTheme.colorScheme.primary
-    Row(
+    var searchFocused by remember { mutableStateOf(false) }
+    Box(
         Modifier.fillMaxSize().background(surface)
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) false
+                if (searchFocused || event.type != KeyEventType.KeyDown) false
                 else when (event.key) {
                     Key.Spacebar -> { vm.player.toggle(); true }
                     Key.DirectionLeft -> { vm.player.seek(-10_000); true }
@@ -79,11 +81,20 @@ private fun DesktopScreen(
                         else vm.showQueue = false
                         true
                     }
-                    Key.F -> { toggleFullscreen(); true }
+                    Key.F -> {
+                        if (vm.activeVideo != null || vm.playingVideo != null) {
+                            toggleFullscreen()
+                            true
+                        } else false
+                    }
                     else -> false
                 }
             }
     ) {
+        if (fullscreen) {
+            PlayerPane(vm, fullscreen = true, toggleFullscreen = toggleFullscreen)
+        } else {
+        Row(Modifier.fillMaxSize()) {
         Column(
             Modifier.width(170.dp).fillMaxHeight()
                 .background(Color(0xFF171C16)).padding(14.dp),
@@ -92,14 +103,15 @@ private fun DesktopScreen(
             Text("SUPJAV", style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold, color = focusColor)
             Spacer(Modifier.height(18.dp))
-            NavButton("首页", vm.section == FeedKind.LATEST) { vm.select(FeedKind.LATEST) }
+            NavButton("首页", vm.localListTitle == null &&
+                vm.section == FeedKind.LATEST && !vm.showCategories) { vm.select(FeedKind.LATEST) }
             NavButton("分类", vm.showCategories) { vm.browseCategories() }
             NavButton("今日热门", vm.section == FeedKind.DAY) { vm.select(FeedKind.DAY) }
             NavButton("周榜", vm.section == FeedKind.WEEK) { vm.select(FeedKind.WEEK) }
             NavButton("月榜", vm.section == FeedKind.MONTH) { vm.select(FeedKind.MONTH) }
             HorizontalDivider(Modifier.padding(vertical = 9.dp))
-            NavButton("播放历史", false) { vm.showLocalList("recent") }
-            NavButton("我的收藏", false) { vm.showLocalList("favorites") }
+            NavButton("播放历史", vm.localListTitle == "播放历史") { vm.showLocalList("recent") }
+            NavButton("我的收藏", vm.localListTitle == "我的收藏") { vm.showLocalList("favorites") }
             Spacer(Modifier.weight(1f))
             Text("PC · 触屏 / 鼠标", color = Color.LightGray,
                 style = MaterialTheme.typography.labelSmall)
@@ -116,7 +128,8 @@ private fun DesktopScreen(
                 OutlinedTextField(
                     value = vm.searchQuery,
                     onValueChange = { vm.searchQuery = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f)
+                        .onFocusChanged { searchFocused = it.isFocused },
                     singleLine = true,
                     placeholder = { Text("搜索作品、番号、演员或标签") },
                     keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
@@ -128,17 +141,13 @@ private fun DesktopScreen(
                 OutlinedButton(onClick = { vm.showQueue = !vm.showQueue },
                     modifier = Modifier.height(50.dp)) { Text("播放列表 ☷") }
             }
-            if (vm.activeVideo != null) {
+            if (vm.activeVideo != null || vm.playingVideo != null) {
                 PlayerPane(vm, fullscreen, toggleFullscreen)
                 DetailActions(vm)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (vm.showCategories) "分类目录"
-                    else if (vm.section == FeedKind.SEARCH) "搜索结果 · " + vm.sectionValue
-                    else vm.section.title,
-                    style = MaterialTheme.typography.titleLarge
-                )
+                Text(vm.displayTitle,
+                    style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.weight(1f))
                 Text(vm.status, style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -151,12 +160,16 @@ private fun DesktopScreen(
             if (vm.showCategories) {
                 CategoryGrid(vm, Modifier.weight(1f))
             } else {
-                PosterGrid(vm, Modifier.weight(1f))
+                key(vm.displayTitle) {
+                    PosterGrid(vm, Modifier.weight(1f))
+                }
             }
         }
         if (vm.showQueue) {
             VerticalDivider()
             QueueSidebar(vm, Modifier.width(260.dp).fillMaxHeight())
+        }
+        }
         }
     }
 }
@@ -196,9 +209,16 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
         }
     }
 
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-        .background(Color.Black)) {
-        Box(Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+    Column(
+        (if (fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.Black)
+    ) {
+        Box(
+            if (fullscreen) Modifier.fillMaxWidth().weight(1f)
+            else Modifier.fillMaxWidth().height(300.dp),
+            contentAlignment = Alignment.Center
+        ) {
             if (component == null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("VLC 3.x 未安装 / 无法加载", color = Color.White)
@@ -236,11 +256,25 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Control("⏮ 上一部", vm.activeVideo != null) { vm.adjacent(-1) }
+                    Control(
+                        "⏮ 上一部",
+                        !vm.switching && PlaybackQueuePolicy.adjacent(
+                            vm.playlistItems.toList(),
+                            (vm.playingVideo ?: vm.activeVideo)?.id, -1
+                        ) != null
+                    ) { vm.adjacent(-1) }
                     Control("−10s") { vm.player.seek(-10_000) }
                     Control(if (vm.player.playing) "暂停" else "播放") { vm.player.toggle() }
                     Control("+10s") { vm.player.seek(10_000) }
-                    Control("下一部 ⏭", vm.activeVideo != null) { vm.adjacent(1) }
+                    Control(
+                        "下一部 ⏭",
+                        !vm.switching && (
+                            PlaybackQueuePolicy.adjacent(
+                                vm.playlistItems.toList(),
+                                (vm.playingVideo ?: vm.activeVideo)?.id, 1
+                            ) != null || vm.canLoadQueueMore
+                        )
+                    ) { vm.adjacent(1) }
                     Spacer(Modifier.weight(1f))
                     Control("列表") { vm.showQueue = !vm.showQueue }
                     Control(if (fullscreen) "退出全屏" else "全屏") { toggleFullscreen() }
@@ -251,6 +285,13 @@ private fun PlayerPane(vm: DesktopController, fullscreen: Boolean, toggleFullscr
     if (vm.player.feedback.isNotBlank()) {
         Text(vm.player.feedback, style = MaterialTheme.typography.labelSmall,
             color = green)
+    }
+    vm.player.errorMessage?.let { message ->
+        Text(message, color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.labelSmall)
+    }
+    if (vm.player.phase in setOf(PlayerPhase.OPENING, PlayerPhase.BUFFERING)) {
+        LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
 
@@ -275,7 +316,8 @@ private fun DetailActions(vm: DesktopController) {
     val detail = vm.detail
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(vm.activeVideo?.title.orEmpty(), Modifier.weight(1f),
+            Text(vm.activeVideo?.title ?: vm.playingVideo?.title.orEmpty(),
+                Modifier.weight(1f),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium)
             TextButton(onClick = vm::toggleFavorite) {
@@ -283,6 +325,14 @@ private fun DetailActions(vm: DesktopController) {
                     "取消收藏" else "收藏")
             }
             TextButton(onClick = vm::openOfficialPage) { Text("网页兼容播放") }
+        }
+        if (vm.playingVideo != null && vm.playingVideo?.id != vm.activeVideo?.id) {
+            Text("正在播放：" + vm.playingVideo?.title.orEmpty(),
+                style = MaterialTheme.typography.labelSmall, color = green)
+        }
+        if (vm.pendingVideo != null) {
+            Text("准备切换：" + vm.pendingVideo?.title.orEmpty(),
+                style = MaterialTheme.typography.labelSmall, color = green)
         }
         if (detail == null) {
             Text(vm.status, color = Color.LightGray,
@@ -330,9 +380,9 @@ private fun PosterGrid(vm: DesktopController, modifier: Modifier) {
     val last by remember { derivedStateOf {
         grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
     } }
-    LaunchedEffect(last, vm.videos.size, vm.pageLoading, vm.reachedEnd) {
+    LaunchedEffect(last, vm.videos.size, vm.pageLoading, vm.reachedEnd, vm.pageError) {
         if (last >= vm.videos.size - 5 && vm.videos.isNotEmpty() &&
-            !vm.pageLoading && !vm.reachedEnd) vm.loadMore()
+            !vm.pageLoading && !vm.reachedEnd && vm.pageError == null) vm.loadMore()
     }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(142.dp),
@@ -347,6 +397,9 @@ private fun PosterGrid(vm: DesktopController, modifier: Modifier) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Box(Modifier.fillMaxWidth().padding(10.dp), contentAlignment = Alignment.Center) {
                 if (vm.pageLoading) CircularProgressIndicator(Modifier.size(23.dp))
+                else if (vm.pageError != null) TextButton(
+                    onClick = { if (vm.videos.isEmpty()) vm.loadFeed() else vm.loadMore() }
+                ) { Text("加载失败 · 点击重试") }
                 else if (!vm.reachedEnd) TextButton(onClick = vm::loadMore) { Text("加载更多") }
             }
         }
@@ -400,7 +453,7 @@ private fun CategoryGrid(vm: DesktopController, modifier: Modifier) {
                 onClick = { vm.select(category.kind, category.path) },
                 modifier = Modifier.fillMaxWidth().height(54.dp)
             ) {
-                Text(category.label, maxLines = 2,
+                Text(category.kind.title + " · " + category.label, maxLines = 2,
                     overflow = TextOverflow.Ellipsis)
             }
         }
@@ -410,22 +463,25 @@ private fun CategoryGrid(vm: DesktopController, modifier: Modifier) {
 @Composable
 private fun QueueSidebar(vm: DesktopController, modifier: Modifier) {
     val grid = rememberLazyGridState()
-    val idx = vm.videos.indexOfFirst { it.id == vm.activeVideo?.id }
-    LaunchedEffect(vm.activeVideo?.id) {
+    val currentVideoId = (vm.playingVideo ?: vm.activeVideo)?.id
+    val idx = vm.playlistItems.indexOfFirst { it.id == currentVideoId }
+    LaunchedEffect(currentVideoId) {
         if (idx >= 0) grid.scrollToItem((idx / 2) * 2)
     }
     val last by remember { derivedStateOf {
         grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
     } }
-    LaunchedEffect(last, vm.videos.size, vm.pageLoading, vm.reachedEnd) {
-        if (last >= vm.videos.size - 3 && vm.videos.isNotEmpty() &&
-            !vm.pageLoading && !vm.reachedEnd) vm.loadMore()
+    LaunchedEffect(last, vm.playlistItems.size, vm.queueLoading,
+        vm.queueEndReached, vm.queueError) {
+        if (last >= vm.playlistItems.size - 3 && vm.playlistItems.isNotEmpty() &&
+            !vm.queueLoading && vm.canLoadQueueMore && vm.queueError == null)
+            vm.loadQueueMore()
     }
     Column(modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("播放列表", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
-            Text(vm.videos.size.toString(), style = MaterialTheme.typography.labelSmall)
+            Text(vm.playlistItems.size.toString(), style = MaterialTheme.typography.labelSmall)
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -434,15 +490,15 @@ private fun QueueSidebar(vm: DesktopController, modifier: Modifier) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f).fillMaxWidth()
         ) {
-            items(vm.videos, key = { it.id }) { item ->
+            items(vm.playlistItems, key = { it.id }) { item ->
                 Box(
                     Modifier.fillMaxWidth().aspectRatio(0.72f)
                         .clip(RoundedCornerShape(7.dp))
                         .background(card)
                         .clickable { vm.open(item, autoplay = true) }
                         .border(
-                            if (item.id == vm.activeVideo?.id) 2.dp else 0.dp,
-                            if (item.id == vm.activeVideo?.id) green else Color.Transparent,
+                            if (item.id == currentVideoId) 2.dp else 0.dp,
+                            if (item.id == currentVideoId) green else Color.Transparent,
                             RoundedCornerShape(7.dp)
                         )
                 ) {
@@ -460,9 +516,18 @@ private fun QueueSidebar(vm: DesktopController, modifier: Modifier) {
                 }
             }
         }
-        if (!vm.reachedEnd) TextButton(
-            onClick = vm::loadMore, enabled = !vm.pageLoading,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text(if (vm.pageLoading) "正在加载..." else "加载更多") }
+        if (vm.canLoadQueueMore || vm.queueLoading || vm.queueError != null) {
+            TextButton(
+                onClick = vm::loadQueueMore,
+                enabled = !vm.queueLoading && vm.canLoadQueueMore,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(when {
+                    vm.queueLoading -> "正在加载..."
+                    vm.queueError != null -> "加载失败 · 点击重试"
+                    else -> "加载更多"
+                })
+            }
+        }
     }
 }
