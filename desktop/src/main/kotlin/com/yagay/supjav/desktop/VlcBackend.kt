@@ -12,6 +12,10 @@ import java.awt.event.ContainerEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.SwingUtilities
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.swing.Timer
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
 import uk.co.caprica.vlcj.player.base.MediaPlayer
@@ -96,6 +100,40 @@ class VlcBackend(private val discoverNative: Boolean = true) : AutoCloseable {
      * LibVLC's standard HTTP input does not expose arbitrary custom headers;
      * browser-only providers must use a browser fallback.
      */
+    /**
+     * VLCJ attaches its native video output to a real AWT Canvas. When
+     * switching from WebView2 back to VLC, Compose first removes the browser
+     * SwingPanel and only THEN re-attaches the VLC SwingPanel.
+     * A synchronous media().play() at that point throws IllegalStateException:
+     * "The video surface component must be displayable".
+     *
+     * Wait for a visible, heavyweight Canvas handle rather than catching the
+     * resulting exception and incorrectly labelling the URL browser-only.
+     */
+    suspend fun playWhenSurfaceReady(source: PlaybackSource): Boolean {
+        val c = component ?: return play(source)
+        val ready = withTimeoutOrNull(8_000L) {
+            while (true) {
+                val attached = withContext(Dispatchers.Swing) {
+                    c.videoSurfaceComponent().isDisplayable &&
+                        c.videoSurfaceComponent().isShowing
+                }
+                if (attached) break
+                delay(60L)
+            }
+            true
+        } == true
+        if (!ready) {
+            errorMessage = "VLC 画面未初始化，请检查视频窗口是否可见"
+            phase = PlayerPhase.ERROR
+            Diagnostics.log("DESKTOP_VLC_SURFACE_TIMEOUT component=" +
+                c.javaClass.simpleName)
+            return false
+        }
+        Diagnostics.log("DESKTOP_VLC_SURFACE_READY")
+        return withContext(Dispatchers.Swing) { play(source) }
+    }
+
     fun play(source: PlaybackSource): Boolean {
         val c = component ?: run {
             errorMessage = "没有检测到 64 位 VLC 3.x"
@@ -121,7 +159,12 @@ class VlcBackend(private val discoverNative: Boolean = true) : AutoCloseable {
         }.getOrElse {
             phase = PlayerPhase.ERROR
             errorMessage = "打开播放源失败：" + it.javaClass.simpleName
-            Diagnostics.log("DESKTOP_PLAY_FAILED type=" + it.javaClass.simpleName)
+            val message = it.message.orEmpty().replace(Regex("(?i)https?://\\S+"), "[URL]")
+            Diagnostics.log("DESKTOP_PLAY_FAILED type=" + it.javaClass.simpleName +
+                " detail=" + message.take(180) +
+                " surfaceDisplayable=" + (runCatching {
+                    c.videoSurfaceComponent().isDisplayable
+                }.getOrDefault(false)))
             false
         }
     }
