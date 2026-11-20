@@ -86,23 +86,29 @@ internal class MissavSource {
     }
     private fun videoUrl(url: String): Boolean {
         if (!site(url)) return false
-        val path = URI(url).path.trimEnd('/')
-        return Regex("^/(?:en/)?[a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)+$").matches(path) &&
-            path.split('/').last() !in setOf("ranking", "search")
+        val segments = URI(url).path.trim('/').split('/')
+        val slug = segments.lastOrNull() ?: return false
+        val prefix = segments.dropLast(1)
+        return segments.size in 1..3 &&
+            prefix.all { it in setOf("en", "ja", "zh", "tw") } &&
+            slug.matches(Regex("(?i)[a-z0-9]+(?:-[a-z0-9]+)+")) &&
+            slug.any { it.isDigit() }
     }
     fun parseList(html: String, base: String = BASE): List<VideoItem> {
         val doc = Jsoup.parse(html, base)
-        return doc.select(".thumbnail, div.thumbnail, .video-item").mapNotNull { tile ->
-            val anchor = tile.selectFirst("a[href]") ?: return@mapNotNull null
+        return doc.select(".thumbnail, .video-item").mapNotNull { tile ->
+            // Cards contain multiple anchors (image, title and ads).
+            val anchor = tile.select("a[href]").firstOrNull { videoUrl(it.absUrl("href")) }
+                ?: return@mapNotNull null
             val link = anchor.absUrl("href")
-            if (!videoUrl(link)) return@mapNotNull null
-            val img = tile.selectFirst("img")
-            val coverRaw = img?.attr("data-src").orEmpty().ifBlank {
-                img?.attr("data-original").orEmpty().ifBlank { img?.attr("src").orEmpty() }
+            val image = tile.selectFirst("img")
+            val coverRaw = image?.attr("data-src").orEmpty().ifBlank {
+                image?.attr("data-original").orEmpty().ifBlank { image?.attr("src").orEmpty() }
             }
-            val title = tile.selectFirst("a[title]")?.attr("title").orEmpty()
-                .ifBlank { tile.selectFirst("a:not(:has(*))")?.text().orEmpty() }
-                .ifBlank { img?.attr("alt").orEmpty() }
+            val title = tile.select("a[href]").firstOrNull {
+                it.absUrl("href") == link && it.text().isNotBlank()
+            }?.text().orEmpty().ifBlank { anchor.attr("title") }
+                .ifBlank { image?.attr("alt").orEmpty() }
                 .ifBlank { tile.text() }.trim().take(250)
             val id = URI(link).path.trimEnd('/').substringAfterLast('/')
             VideoItem(id = id, title = title.ifBlank { id },
@@ -173,22 +179,34 @@ internal class MissavSource {
             val url = it.absUrl("src")
             if (MediaSourceDetector.fromMediaUrl(url, detailUrl) != null) direct.add(url)
         }
-        val expressions = Regex("""(?i)(?:file|source|src)\s*[:=]\s*["'](https://[^"'<>\\ ]{8,2000}(?:m3u8|mp4)(?:\?[^"'<>\\ ]*)?)["']""")
-        for (m in expressions.findAll(html.take(500_000)).take(10)) {
-            val url = m.groupValues[1].replace("\\/", "/")
-            if (MediaSourceDetector.fromMediaUrl(url, detailUrl) != null) direct.add(url)
+        // Actual player declarations, including bounded unpacked player scripts.
+        // No URLs are fabricated from thumbnail identifiers.
+        val expressions = Regex("""(?i)(?:file|source|src|hlsUrl|source1280|source842)\s*[:=]\s*["'](https://[^"'<> ]{8,2000}?(?:\.m3u8|\.mp4)(?:\?[^"'<> ]*)?)["']""")
+        val scripts = doc.select("script:not([src])").map {
+            it.data().ifBlank { it.html() }
+        }.take(100)
+        val candidates = listOf(html.take(500_000)) + scripts +
+            scripts.mapNotNull { SupjavServerAdapters.unpackPacker(it) }
+        for (candidate in candidates.take(150)) {
+            val decoded = candidate.replace("\\/", "/")
+            for (match in expressions.findAll(decoded.take(500_000)).take(20)) {
+                val url = match.groupValues[1]
+                if (MediaSourceDetector.fromMediaUrl(url, detailUrl) != null) direct.add(url)
+            }
         }
-        if (direct.isNotEmpty()) return direct.mapIndexed { i, url ->
-            VideoServer(i.toString(), "MISSAV ${i+1}", url, detailUrl)
+        if (direct.isNotEmpty()) return direct.sortedWith(
+            compareByDescending<String> { it.contains("1080") || it.contains("1280") }
+                .thenByDescending { it.contains("720") || it.contains("842") }
+        ).mapIndexed { i, url ->
+            VideoServer(i.toString(), "MISSAV ${i + 1}", url, detailUrl)
         }
-        // Browser-only iframe is a fallback, not an invented playable stream.
         return doc.select("iframe[src]").mapNotNull { element ->
             val link = element.absUrl("src")
             if (MediaSourceDetector.origin(link) == null ||
-                Regex("(?i)advert|banner|popunder|tracker|doubleclick|googleads").containsMatchIn(link))
-                null else link
+                Regex("(?i)advert|banner|popunder|tracker|doubleclick|googleads")
+                    .containsMatchIn(link)) null else link
         }.distinct().take(3).mapIndexed { i, url ->
-            VideoServer(i.toString(), "MISSAV Player ${i+1}", url, detailUrl)
+            VideoServer(i.toString(), "MISSAV Player ${i + 1}", url, detailUrl)
         }
     }
     suspend fun detail(video: VideoItem): VideoDetail = withContext(Dispatchers.IO) {
