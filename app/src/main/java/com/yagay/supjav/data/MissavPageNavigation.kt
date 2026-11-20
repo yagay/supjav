@@ -13,7 +13,7 @@ internal object MissavPageNavigation {
 
     fun isDirectoryIndex(path: String): Boolean {
         val clean = runCatching { URI(path).path }.getOrDefault(path).trimEnd('/')
-        return Regex("^/(?:dm[0-9]+/)?(?:(?:en|ja|cn|ko|zh|tw)/)?(?:genres|makers|actresses|actors|tags|series)$")
+        return Regex("^/(?:dm[0-9]+/)?(?:(?:en|ja|cn|ko|zh|tw)/)?(?:genres|makers|actresses(?:/ranking)?|actors|tags|series)$")
             .matches(clean)
     }
 
