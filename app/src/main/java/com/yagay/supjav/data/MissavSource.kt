@@ -81,19 +81,28 @@ internal class MissavSource {
 
     fun pageUrl(kind: FeedKind, value: String, page: Int): String {
         require(page in 1..10000)
-        val start = when(kind) {
+        val path = value.substringBefore('?')
+        val args = value.substringAfter('?', "")
+        val query = args.split('&').filter { it.isNotBlank() }.map { parameter ->
+            val pair = parameter.split('=', limit = 2)
+            require(pair.size == 2 && pair[0] in setOf("filters", "sort") &&
+                pair[1].matches(Regex("[a-zA-Z0-9_-]{1,50}")))
+            parameter
+        }.distinct()
+        val base = when(kind) {
             FeedKind.LATEST -> "$BASE/en/new"
             FeedKind.DAY -> "$BASE/en/ranking/daily"
             FeedKind.WEEK -> "$BASE/en/ranking/weekly"
             FeedKind.MONTH -> "$BASE/en/ranking/monthly"
-            FeedKind.SEARCH -> "$BASE/en/search/${encode(value)}"
-            else -> if (value.startsWith("/")) {
-                val path = value.trimEnd('/')
-                require(validTaxonomyPath(path) || validMenuPath(path))
-                BASE + path
-            } else "$BASE/en/${route(kind)}/${slug(value)}"
+            FeedKind.SEARCH -> "$BASE/en/search/" + encode(value)
+            else -> if (path.startsWith("/")) {
+                require(validTaxonomyPath(path.trimEnd('/')) ||
+                    validMenuPath(path.trimEnd('/')))
+                BASE + path.trimEnd('/')
+            } else "$BASE/en/" + route(kind) + "/" + slug(path)
         }
-        return if (page == 1) start else "$start?page=$page"
+        val all = query + if (page == 1) emptyList() else listOf("page=$page")
+        return base + if (all.isEmpty()) "" else "?" + all.joinToString("&")
     }
     fun fetch(url: String, referer: String = "$BASE/"): String {
         require(site(url)) { "Only MissAV HTTPS pages are allowed" }
