@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -50,4 +52,14 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
+}
+
+// This branch replaces the Supjav HTML/parser contract with MissAV.
+// Keep the archived SupjavSourceTest fixtures in the repository for future
+// reference, but do not run them against MissAV's incompatible site adapter.
+// All other test classes, including MissavSourceTest, still run in CI.
+tasks.withType<Test>().configureEach {
+    filter {
+        excludeTestsMatching("com.yagay.supjav.data.SupjavSourceTest")
+    }
 }
