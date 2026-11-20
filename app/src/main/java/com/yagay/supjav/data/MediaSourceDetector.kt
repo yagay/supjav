@@ -65,7 +65,7 @@ class SelectedMediaSession(
     private val trustedOrigins = mutableSetOf<String>()
 
     init {
-        if (siteOrigin in setOf("https://supjav.com", "https://www.supjav.com")) {
+        if (siteOrigin in setOf("https://supjav.com", "https://www.supjav.com", "https://missav.ws", "https://www.missav.ws")) {
             trustedOrigins.add(requireNotNull(siteOrigin))
             // A different-origin document can use Supjav as its referrer even
             // when it originated through the selected wrapper's HTTP redirect.
