@@ -233,11 +233,21 @@ class PlaybackResolver(private val source: SupjavSource) {
         }
         if (System.nanoTime() >= deadlineNs) Diagnostics.log(
             "RESOLVE_TIME_BUDGET line=" + line.name + " pages=" + pages)
-        val detail = if (httpBlocked) "源站限制原生网络请求" else browserReason.take(55)
-        Diagnostics.log("RESOLVE_BROWSER_FALLBACK line=" + line.name +
-            " pages=" + pages + " probes=" + probes +
-            " restricted=" + httpBlocked)
-        ResolveResult.Unavailable("需要 JavaScript 或浏览器播放：" + detail,
-            verifiedPlayerUrl = verifiedPlayerUrl)
+        // A 403 from the actual media CDN is an access denial, not evidence
+        // that JavaScript is required. Switching automatically to WebView
+        // merely repeats the same failed request (as diagnostic logs confirm).
+        if (httpBlocked) {
+            Diagnostics.log("RESOLVE_CDN_ACCESS_DENIED line=" + line.name +
+                " pages=" + pages + " probes=" + probes)
+            ResolveResult.Unavailable(
+                "媒体服务器拒绝访问（HTTP 403）；请刷新作品或选择其他线路。")
+        } else {
+            Diagnostics.log("RESOLVE_BROWSER_FALLBACK line=" + line.name +
+                " pages=" + pages + " probes=" + probes +
+                " restricted=false")
+            ResolveResult.Unavailable(
+                "需要 JavaScript 或浏览器播放：" + browserReason.take(55),
+                verifiedPlayerUrl = verifiedPlayerUrl)
+        }
     }
 }
