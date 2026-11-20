@@ -190,7 +190,9 @@ internal class OkHttpMediaGateway : MediaGateway {
             val (page, bytes, destination) = try {
                 exchange(nextUrl, referer, "HLS_CHILD",
                     maxBytes = if (variant) 8192 else 1024,
-                    range = !variant, includeOrigin = includeOrigin)
+                    // Media3 normally loads HLS fragments with an ordinary GET;
+                    // a 206 on a tiny Range probe can hide a 403 on playback.
+                    range = false, includeOrigin = includeOrigin)
             } catch (e: Exception) {
                 Diagnostics.log("MEDIA_HLS_CHILD_ERROR type=" + e.javaClass.simpleName)
                 return MediaProbe(false, null, null, "hls-child-error", includeOrigin)
