@@ -32,7 +32,9 @@ class CategoryStore(context: Context) {
     @Synchronized fun save(options: List<SupjavSource.BrowseOption>) {
         if (options.isEmpty()) return
         val array = JSONArray()
-        (options + snapshot()).distinctBy { it.path }.take(5000).forEach { item ->
+        (options + snapshot()).distinctBy {
+            if (it.value.startsWith("menu:")) it.value + "|" + it.path else it.path
+        }.take(5000).forEach { item ->
             array.put(JSONObject().apply {
                 put("kind", item.kind.name)
                 put("value", item.value)
