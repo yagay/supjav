@@ -236,7 +236,9 @@ class PlaybackResolver(private val source: SupjavSource) {
         // A 403 from the actual media CDN is an access denial, not evidence
         // that JavaScript is required. Switching automatically to WebView
         // merely repeats the same failed request (as diagnostic logs confirm).
-        if (httpBlocked) {
+        val missavDetail = MediaSourceDetector.origin(server.detailUrl) in
+            setOf("https://missav.ws", "https://www.missav.ws")
+        if (httpBlocked && missavDetail) {
             Diagnostics.log("RESOLVE_CDN_ACCESS_DENIED line=" + line.name +
                 " pages=" + pages + " probes=" + probes)
             ResolveResult.Unavailable(
@@ -246,7 +248,8 @@ class PlaybackResolver(private val source: SupjavSource) {
                 " pages=" + pages + " probes=" + probes +
                 " restricted=false")
             ResolveResult.Unavailable(
-                "需要 JavaScript 或浏览器播放：" + browserReason.take(55),
+                "需要 JavaScript 或浏览器播放：" +
+                    (if (httpBlocked) "源站限制原生网络请求" else browserReason.take(55)),
                 verifiedPlayerUrl = verifiedPlayerUrl)
         }
     }
