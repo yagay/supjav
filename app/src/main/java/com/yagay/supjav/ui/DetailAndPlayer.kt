@@ -109,10 +109,37 @@ fun DetailScreen(
             " entryLength=" + server.link.length)
         request = scope.launch {
             try {
-                when (val result = app.resolver.resolve(server)) {
+                // A site's alternate resolution / provider is only useful if
+                // it was advertised in this video detail. Try at most one
+                // different media host when the selected CDN denies access;
+                // do not fabricate mirrors or hammer a blocked provider.
+                var chosenServer = server
+                var resolved = app.resolver.resolve(server)
+                if (resolved is ResolveResult.Unavailable &&
+                    resolved.reason.contains("HTTP 403")) {
+                    val selectedHost = runCatching {
+                        java.net.URI(server.link).host
+                    }.getOrNull()
+                    val alternate = detail?.servers?.firstOrNull { candidate ->
+                        candidate.id != server.id &&
+                            runCatching { java.net.URI(candidate.link).host }
+                                .getOrNull()?.let { it != selectedHost } == true
+                    }
+                    if (alternate != null) {
+                        Diagnostics.log("MISSAV_ALTERNATE_CDN_TRY from=" +
+                            selectedHost + " to=" +
+                            runCatching { java.net.URI(alternate.link).host }.getOrNull())
+                        val second = app.resolver.resolve(alternate)
+                        if (second is ResolveResult.Playable) {
+                            chosenServer = alternate
+                            resolved = second
+                        }
+                    }
+                }
+                when (val result = resolved) {
                     is ResolveResult.Playable -> {
                         app.playerEngine.play(detail?.video ?: video, result.source)
-                        onPlay(server)
+                        onPlay(chosenServer)
                     }
                     is ResolveResult.Unavailable -> {
                         Diagnostics.log("PLAY_SOURCE_UNAVAILABLE video=" + video.id +
