@@ -53,6 +53,29 @@ class MissavSourceTest {
         assertEquals("https://cdn.example.org/master.m3u8", servers.single().link)
     }
 
+    @Test fun parsesLocalizedAndDynamicPrefixTaxonomy() {
+        val html = """
+           <a href="/genres/drama">Drama</a>
+           <a href="/dm2/en/tags/subtitle">Subtitle</a>
+           <a href="/cn/actresses/sample">Sample</a>
+           <a href="/makers/studio">Studio</a>
+           <a href="/en/genres/drama?page=2">Second Page</a>
+        """.trimIndent()
+        val items = site.parseBrowseOptions(html)
+        assertEquals(4, items.size)
+        assertTrue(items.any { it.kind == FeedKind.TAG && it.path == "/dm2/en/tags/subtitle" })
+        assertTrue(items.any { it.kind == FeedKind.MAKER })
+        assertEquals("https://missav.ws/dm2/en/tags/subtitle",
+            site.pageUrl(FeedKind.TAG, "/dm2/en/tags/subtitle", 1))
+    }
+
+    @Test fun parsesVideoLinksBehindDynamicPrefix() {
+        val html = """
+          <div class="thumbnail"><a href="/dm2/cn/abc-123">ABC-123</a></div>
+        """.trimIndent()
+        assertEquals(1, site.parseList(html).size)
+    }
+
     @Test fun parsesMetadataAndRejectsOtherSiteTaxonomy() {
         val html = """
           <a href="/en/genres/drama">Drama</a>
