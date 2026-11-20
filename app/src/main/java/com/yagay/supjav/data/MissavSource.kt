@@ -277,7 +277,12 @@ internal class MissavSource {
         }.take(100)
         val candidates = listOf(html.take(500_000)) + scripts +
             scripts.mapNotNull { SupjavServerAdapters.unpackPacker(it) }
-        val playerUrl = Regex("""https://[^\\s"'<>\\\\]{8,2000}?\\.(?:m3u8|mp4)(?:\\?[^\\s"'<>\\\\]*)?""", RegexOption.IGNORE_CASE)
+        // Raw triple-quoted Kotlin regex: use single backslashes. The old
+        // expression used \\s / \\. and silently missed HLS URLs in scripts.
+        val playerUrl = Regex(
+            """https://[^\s"'<>\\]{8,2000}?\.(?:m3u8|mp4)(?:\?[^\s"'<>\\]*)?""",
+            RegexOption.IGNORE_CASE
+        )
         for (candidate in candidates.take(150)) {
             val decoded = candidate.replace("\\/", "/")
             for (match in expressions.findAll(decoded.take(500_000)).take(20)) {
@@ -296,6 +301,7 @@ internal class MissavSource {
                 }
             }
         }
+        Diagnostics.log("MISSAV_MEDIA_CANDIDATES count=" + direct.size)
         if (direct.isNotEmpty()) return direct.sortedWith(
             compareByDescending<String> { it.contains("1080") || it.contains("1280") }
                 .thenByDescending { it.contains("720") || it.contains("842") }
