@@ -231,11 +231,23 @@ internal class MissavSource {
         }.take(100)
         val candidates = listOf(html.take(500_000)) + scripts +
             scripts.mapNotNull { SupjavServerAdapters.unpackPacker(it) }
+        val playerUrl = Regex("""https://[^\\s"'<>\\\\]{8,2000}?\\.(?:m3u8|mp4)(?:\\?[^\\s"'<>\\\\]*)?""", RegexOption.IGNORE_CASE)
         for (candidate in candidates.take(150)) {
             val decoded = candidate.replace("\\/", "/")
             for (match in expressions.findAll(decoded.take(500_000)).take(20)) {
                 val url = match.groupValues[1]
                 if (MediaSourceDetector.fromMediaUrl(url, detailUrl) != null) direct.add(url)
+            }
+            // Packed players may use unnamed URL constants instead of file/source.
+            // Only scan scripts declaring a video player; never scrape media-looking
+            // URLs from the complete page or untrusted advertising markup.
+            if (candidate !== candidates.first() &&
+                listOf("surrit", "jwplayer", "videojs", "player.setup", "source1280", "source842")
+                    .any { decoded.contains(it, ignoreCase = true) }) {
+                for (match in playerUrl.findAll(decoded.take(200_000)).take(12)) {
+                    val url = match.value
+                    if (MediaSourceDetector.fromMediaUrl(url, detailUrl) != null) direct.add(url)
+                }
             }
         }
         if (direct.isNotEmpty()) return direct.sortedWith(
