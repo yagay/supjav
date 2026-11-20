@@ -8,11 +8,11 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.yagay.supjav"
+        applicationId = "com.yagay.missav"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.1.0-missav"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
