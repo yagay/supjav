@@ -207,6 +207,9 @@ internal class MissavSource {
                     .containsMatchIn(link)) null else link
         }.distinct().take(3).mapIndexed { i, url ->
             VideoServer(i.toString(), "MISSAV Player ${i + 1}", url, detailUrl)
+        }.ifEmpty {
+            // Web-only script player: preserve a legitimate playback entry.
+            listOf(VideoServer("web", "MISSAV Web", detailUrl, detailUrl))
         }
     }
     suspend fun detail(video: VideoItem): VideoDetail = withContext(Dispatchers.IO) {
