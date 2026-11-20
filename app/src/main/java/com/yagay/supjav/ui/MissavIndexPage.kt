@@ -54,15 +54,18 @@ internal fun MissavIndexPage(
                             expectedGroup
                     }
                 val doc = Jsoup.parse(html, request)
+                val pagePattern = Regex("(?:[?&])page=([0-9]+)")
+                val currentNumber = pagePattern.find(request)?.groupValues?.get(1)
+                    ?.toIntOrNull() ?: 1
                 val nextLink = doc.select("a[rel=next][href], a.next[href], .pagination a[href]")
                     .firstOrNull { a ->
                         val href = a.absUrl("href")
-                        val label = a.text().trim().lowercase()
+                        val number = pagePattern.find(href)?.groupValues?.get(1)
+                            ?.toIntOrNull()
                         href.startsWith(MissavSource.BASE + rootPath + "?") &&
-                            Regex("(?:[?&])page=[0-9]+").containsMatchIn(href) &&
+                            number != null && number > currentNumber &&
                             (a.attr("rel") == "next" || a.hasClass("next") ||
-                             label == "next" || label == "›" || label == "»" ||
-                             label.toIntOrNull() != null)
+                                number == currentNumber + 1)
                     }?.absUrl("href")
                 Triple(parsed, nextLink,
                     MissavPageNavigation.parseControls(html, request).sorts)
