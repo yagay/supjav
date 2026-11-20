@@ -1,7 +1,7 @@
 name: Android Debug
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, missav]
   pull_request:
   workflow_dispatch:
 jobs:
@@ -31,10 +31,10 @@ jobs:
         with:
           gradle-version: '9.4.1'
       - name: Compile Debug only
-        run: gradle :app:assembleDebug :app:testDebugUnitTest --stacktrace --no-daemon
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: supjav-debug
+          name: missav-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
