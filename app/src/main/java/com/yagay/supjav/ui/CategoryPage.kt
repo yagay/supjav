@@ -24,6 +24,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yagay.supjav.SupjavApp
 import com.yagay.supjav.data.SupjavSource
+import com.yagay.supjav.data.MissavPageNavigation
+import com.yagay.supjav.data.MissavSource
 import com.yagay.supjav.model.FeedKind
 import com.yagay.supjav.model.VideoItem
 import com.yagay.supjav.util.Diagnostics
@@ -57,6 +59,13 @@ fun CategoryPage(
     var selectedKind by remember { mutableStateOf<FeedKind?>(null) }
     var selectedPath by rememberSaveable { mutableStateOf("") }
     var selectedTitle by rememberSaveable { mutableStateOf("") }
+    var selectedFilter by rememberSaveable(selectedPath) { mutableStateOf("") }
+    var selectedSort by rememberSaveable(selectedPath) { mutableStateOf("") }
+    var pageControls by remember(selectedPath) {
+        mutableStateOf(MissavPageNavigation.Controls())
+    }
+    var filtersOpen by remember { mutableStateOf(false) }
+    var sortsOpen by remember { mutableStateOf(false) }
     // Directory filtering shares the page's inline search field.
 
     LaunchedEffect(initialKind, initialPath) {
@@ -103,6 +112,22 @@ fun CategoryPage(
             fetching = false
         }
     }
+    LaunchedEffect(selectedPath) {
+        pageControls = MissavPageNavigation.Controls()
+        if (selectedPath.isBlank() || MissavPageNavigation.isDirectoryIndex(selectedPath)) return@LaunchedEffect
+        try {
+            val html = withContext(Dispatchers.IO) {
+                app.source.fetch(MissavSource.BASE + selectedPath.substringBefore('?'))
+            }
+            pageControls = MissavPageNavigation.parseControls(
+                html, MissavSource.BASE + selectedPath.substringBefore('?')
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Diagnostics.log("MISSAV_CONTROLS_FAILED type=" + e.javaClass.simpleName)
+        }
+    }
     val current = selectedKind
     // Category owns its local selection state, but only the root route
     // controller registers a system Back handler. This prevents an offscreen
@@ -142,8 +167,70 @@ fun CategoryPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            FeedScreen(app, current, selectedPath, onVideo,
-                onPlaylistCaptured = onPlaylistCaptured)
+            if (MissavPageNavigation.isDirectoryIndex(selectedPath)) {
+                MissavIndexPage(app, selectedPath) { option ->
+                    selectedKind = option.kind
+                    selectedPath = option.path
+                    selectedTitle = option.label
+                    app.categoryStore.markVisited(option.path)
+                    visited = app.categoryStore.recent()
+                }
+            } else {
+                if (pageControls.filters.isNotEmpty() || pageControls.sorts.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (pageControls.filters.isNotEmpty()) {
+                            Box {
+                                OutlinedButton(onClick = { filtersOpen = true }) {
+                                    Text("筛选：" + (pageControls.filters.firstOrNull {
+                                        it.value == selectedFilter
+                                    }?.label ?: "All"))
+                                }
+                                DropdownMenu(expanded = filtersOpen,
+                                    onDismissRequest = { filtersOpen = false }) {
+                                    pageControls.filters.forEach { choice ->
+                                        DropdownMenuItem(
+                                            text = { Text(choice.label) },
+                                            onClick = {
+                                                selectedFilter = choice.value
+                                                filtersOpen = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (pageControls.sorts.isNotEmpty()) {
+                            Box {
+                                OutlinedButton(onClick = { sortsOpen = true }) {
+                                    Text("排序：" + (pageControls.sorts.firstOrNull {
+                                        it.value == selectedSort
+                                    }?.label ?: "Default"))
+                                }
+                                DropdownMenu(expanded = sortsOpen,
+                                    onDismissRequest = { sortsOpen = false }) {
+                                    pageControls.sorts.forEach { choice ->
+                                        DropdownMenuItem(
+                                            text = { Text(choice.label) },
+                                            onClick = {
+                                                selectedSort = choice.value
+                                                sortsOpen = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                val route = MissavPageNavigation.queryPath(
+                    selectedPath, selectedFilter, selectedSort
+                )
+                FeedScreen(app, current, route, onVideo,
+                    onPlaylistCaptured = onPlaylistCaptured)
+            }
         }
         return
     }
@@ -312,11 +399,9 @@ fun CategoryPage(
                             }
                         } else null
                         if (indexKind != null) {
-                            selectedMenu = ""
-                            chosenKind = indexKind
-                            initialFilter = "全部"
-                            selectedKind = null
-                            selectedPath = ""
+                            selectedKind = indexKind
+                            selectedPath = option.path
+                            selectedTitle = option.label
                         } else {
                             selectedKind = option.kind
                             selectedPath = option.path
