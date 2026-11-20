@@ -130,6 +130,19 @@ class PlaybackResolverTest {
         assertTrue(result.reason.contains("源站限制"))
     }
 
+    @Test fun missavCdn403ReportsAccessDeniedWithoutAutomaticWebFallback() = runBlocking {
+        val fake = FakeGateway()
+        val detailUrl = "https://missav.ws/en/abc-123"
+        val source = "https://surrit.com/example/playlist.m3u8"
+        fake.probes[source] = MediaProbe(false, 403, null, "http")
+        val resolver = PlaybackResolver(SupjavSource()).apply { gateway = fake }
+        val result = resolver.resolve(VideoServer("0", "MISSAV 1", source, detailUrl))
+        assertTrue(result is ResolveResult.Unavailable)
+        val reason = (result as ResolveResult.Unavailable).reason
+        assertTrue(reason.contains("403"))
+        assertFalse(reason.contains("JavaScript"))
+    }
+
     @Test fun verificationPageIsNotBypassed() = runBlocking {
         val fake = FakeGateway()
         val url = "https://evsishere.xyz/e/captcha"
