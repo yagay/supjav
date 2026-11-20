@@ -83,6 +83,19 @@ class MissavSourceTest {
         assertTrue(menu.none { it.label == "Watch history" })
     }
 
+    @Test fun unlabelledHlsInPlayerScriptCanBeDetected() {
+        val html = """
+            <script>
+                const playerConfig = {jwplayer: true};
+                const videoManifest = "https://surrit.com/12345678-1234-1234-1234-123456789012/playlist.m3u8";
+            </script>
+        """.trimIndent()
+        val streams = site.parseServers(html, "https://missav.ws/en/test-123")
+        assertEquals(1, streams.size)
+        assertTrue(streams.single().link.endsWith("/playlist.m3u8"))
+        assertFalse(streams.single().name.contains("Web"))
+    }
+
     @Test fun parsesLocalizedAndDynamicPrefixTaxonomy() {
         val html = """
            <a href="/genres/drama">Drama</a>
