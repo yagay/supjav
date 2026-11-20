@@ -53,6 +53,36 @@ class MissavSourceTest {
         assertEquals("https://cdn.example.org/master.m3u8", servers.single().link)
     }
 
+    @Test fun parsesTopNavigationGroupsAndObservedPaths() {
+        val html = """
+            <nav>
+                <a href="#">Watch JAV</a>
+                <a href="/dm539/en/new">Recent update</a>
+                <a href="/dm817/en/uncensored-leak">Uncensored leak</a>
+                <a href="#">Amateur</a>
+                <a href="/dm36/en/siro">SIRO</a>
+                <a href="/dm34/en/luxu">LUXU</a>
+                <a href="#">Uncensored</a>
+                <a href="/dm817/en/uncensored-leak">Uncensored leak</a>
+                <a href="/dm597/en/fc2">FC2</a>
+                <a href="#">Asia AV</a>
+                <a href="/dm63/en/madou">Madou</a>
+                <a href="/dm31/en/twav">TWAV</a>
+                <a href="#">My collection</a>
+                <a href="/en/watch-history">Watch history</a>
+            </nav>
+        """.trimIndent()
+        val menu = site.parseMenuOptions(html)
+        assertEquals(8, menu.size)
+        assertEquals(2, menu.count { it.value == "menu:Watch JAV" })
+        assertEquals(2, menu.count { it.value == "menu:Amateur" })
+        assertEquals(2, menu.count { it.value == "menu:Uncensored" })
+        assertEquals(2, menu.count { it.value == "menu:Asia AV" })
+        assertEquals("https://missav.ws/dm36/en/siro",
+            site.pageUrl(FeedKind.CATEGORY, "/dm36/en/siro", 1))
+        assertTrue(menu.none { it.label == "Watch history" })
+    }
+
     @Test fun parsesLocalizedAndDynamicPrefixTaxonomy() {
         val html = """
            <a href="/genres/drama">Drama</a>
