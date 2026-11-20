@@ -276,16 +276,30 @@ fun DetailScreen(
                             .onFailure { playbackError = "日志导出失败：" +
                                 it.javaClass.simpleName }
                     }) { Text("导出这次失败的诊断 ZIP") }
-                    failedServer?.let { failed ->
-                        OutlinedButton(onClick = {
-                            Diagnostics.log("PLAY_WEB_COMPAT_SELECTED video=" + video.id +
-                                " line=" + failed.name)
-                            onWebPlay(failed)
-                        }) {
-                            Icon(Icons.Outlined.OpenInBrowser, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (playbackError.orEmpty().contains("真人验证"))
-                                "打开网页完成验证" else "使用网页兼容模式播放此线路")
+                    if (playbackError.orEmpty().contains("HTTP 403")) {
+                        OutlinedButton(
+                            onClick = {
+                                // Re-fetch the site's advertised player config,
+                                // rather than replaying the same rejected CDN URL.
+                                Diagnostics.log("MISSAV_REFRESH_AFTER_CDN_403 video=" + video.id)
+                                playbackError = null
+                                failedServer = null
+                                retryRevision++
+                            },
+                            enabled = !loading && resolving == null
+                        ) { Text("重新获取播放线路") }
+                    } else {
+                        failedServer?.let { failed ->
+                            OutlinedButton(onClick = {
+                                Diagnostics.log("PLAY_WEB_COMPAT_SELECTED video=" + video.id +
+                                    " line=" + failed.name)
+                                onWebPlay(failed)
+                            }) {
+                                Icon(Icons.Outlined.OpenInBrowser, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (playbackError.orEmpty().contains("真人验证"))
+                                    "打开网页完成验证" else "使用网页兼容模式播放此线路")
+                            }
                         }
                     }
                 }
