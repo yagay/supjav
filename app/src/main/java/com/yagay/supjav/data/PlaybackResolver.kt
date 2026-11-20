@@ -20,6 +20,16 @@ class PlaybackResolver(private val source: SupjavSource) {
     internal var gateway: MediaGateway = OkHttpMediaGateway()
 
     suspend fun resolve(server: VideoServer): ResolveResult = withContext(Dispatchers.IO) {
+        // A first-party MissAV document is a deliberate browser fallback,
+        // not a Supjav server token. Do not feed it to the old gateway parser.
+        if (server.name == "MISSAV Web" &&
+            MediaSourceDetector.origin(server.link) in
+                setOf("https://missav.ws", "https://www.missav.ws") &&
+            server.link == server.detailUrl) {
+            Diagnostics.log("MISSAV_BROWSER_FALLBACK reason=dynamic-player")
+            return@withContext ResolveResult.Unavailable(
+                "需要 JavaScript 浏览器播放：原站动态播放器")
+        }
         val line = SupjavLine.of(server.name)
         val raw = server.link.trim()
         val entryType = when {
