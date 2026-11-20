@@ -30,6 +30,29 @@ class MissavSourceTest {
         assertEquals("https://missav.ws/en/abc-123", videos.single().detailUrl)
     }
 
+    @Test fun ignoresAdAnchorBeforeActualVideo() {
+        val html = """
+            <div class="thumbnail">
+              <a href="https://ads.example.org/click">ads</a>
+              <a href="/en/abc-123"><img data-src="https://images.example.org/poster.webp"></a>
+              <a href="/en/abc-123">ABC-123 Example</a>
+            </div>
+        """.trimIndent()
+        val videos = site.parseList(html)
+        assertEquals(1, videos.size)
+        assertEquals("ABC-123 Example", videos.single().title)
+    }
+
+    @Test fun extractsDeclaredHlsAndAvoidsAdVideo() {
+        val html = """
+            <script>var source1280 = 'https://cdn.example.org/master.m3u8';</script>
+            <iframe src="https://ads.example.org/advert"></iframe>
+        """.trimIndent()
+        val servers = site.parseServers(html, "https://missav.ws/en/abc-123")
+        assertEquals(1, servers.size)
+        assertEquals("https://cdn.example.org/master.m3u8", servers.single().link)
+    }
+
     @Test fun parsesMetadataAndRejectsOtherSiteTaxonomy() {
         val html = """
           <a href="/en/genres/drama">Drama</a>
