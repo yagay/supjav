@@ -62,7 +62,8 @@ class MissavSourceTest {
            <a href="/en/genres/drama?page=2">Second Page</a>
         """.trimIndent()
         val items = site.parseBrowseOptions(html)
-        assertEquals(4, items.size)
+        // Localized and unprefixed links are distinct navigable site routes.
+        assertEquals(5, items.size)
         assertTrue(items.any { it.kind == FeedKind.TAG && it.path == "/dm2/en/tags/subtitle" })
         assertTrue(items.any { it.kind == FeedKind.MAKER })
         assertEquals("https://missav.ws/dm2/en/tags/subtitle",
