@@ -38,11 +38,14 @@ internal class MissavSource {
             ?: throw IllegalArgumentException("Invalid MissAV category")
     private fun route(kind: FeedKind): String = when (kind) {
         FeedKind.CATEGORY -> "genres"
-        FeedKind.TAG -> "genres"
+        FeedKind.TAG -> "tags"
         FeedKind.ACTOR -> "actresses"
         FeedKind.MAKER -> "makers"
         else -> "genres"
     }
+    private fun validTaxonomyPath(path: String): Boolean =
+        Regex("^/(?:dm[0-9]+/)?(?:(?:en|ja|cn|ko|zh|tw)/)?(?:genres|genre|tags|tag|actresses|actress|actors|actor|makers|maker|series)/[A-Za-z0-9_%.-]+$").matches(path)
+
     fun pageUrl(kind: FeedKind, value: String, page: Int): String {
         require(page in 1..10000)
         val start = when(kind) {
@@ -53,7 +56,7 @@ internal class MissavSource {
             FeedKind.SEARCH -> "$BASE/en/search/${encode(value)}"
             else -> if (value.startsWith("/")) {
                 val path = value.trimEnd('/')
-                require(Regex("^/en/(?:genres|actresses|makers|tags)/[A-Za-z0-9_%.-]+$").matches(path))
+                require(validTaxonomyPath(path))
                 BASE + path
             } else "$BASE/en/${route(kind)}/${slug(value)}"
         }
@@ -86,13 +89,12 @@ internal class MissavSource {
     }
     private fun videoUrl(url: String): Boolean {
         if (!site(url)) return false
-        val segments = URI(url).path.trim('/').split('/')
-        val slug = segments.lastOrNull() ?: return false
-        val prefix = segments.dropLast(1)
-        return segments.size in 1..3 &&
-            prefix.all { it in setOf("en", "ja", "zh", "tw") } &&
-            slug.matches(Regex("(?i)[a-z0-9]+(?:-[a-z0-9]+)+")) &&
-            slug.any { it.isDigit() }
+        val parts = URI(url).path.trim('/').split('/')
+            .dropWhile { it.matches(Regex("dm[0-9]+")) }
+            .dropWhile { it in setOf("en", "ja", "cn", "ko", "zh", "tw") }
+        val name = parts.singleOrNull() ?: return false
+        return name.matches(Regex("(?i)[a-z0-9]+(?:-[a-z0-9]+)+")) &&
+            name.any { it.isDigit() }
     }
     fun parseList(html: String, base: String = BASE): List<VideoItem> {
         val doc = Jsoup.parse(html, base)
@@ -141,36 +143,78 @@ internal class MissavSource {
             val link = anchor.absUrl("href")
             if (!site(link)) return@mapNotNull null
             val path = URI(link).path.trimEnd('/')
-            val m = Regex("^/en/(genres|actresses|makers|tags)/([A-Za-z0-9_%.-]+)$").matchEntire(path)
-                ?: return@mapNotNull null
-            val kind = when(m.groupValues[1]) {
-                "actresses" -> FeedKind.ACTOR
-                "makers" -> FeedKind.MAKER
-                "tags" -> FeedKind.TAG
+            if (!validTaxonomyPath(path)) return@mapNotNull null
+            val segments = path.trim('/').split('/')
+            val group = segments[segments.size - 2]
+            val kind = when (group) {
+                "actresses", "actress", "actors", "actor" -> FeedKind.ACTOR
+                "makers", "maker" -> FeedKind.MAKER
+                "tags", "tag" -> FeedKind.TAG
                 else -> FeedKind.CATEGORY
             }
-            SupjavSource.BrowseOption(kind, m.groupValues[2],
-                anchor.text().trim().ifBlank { m.groupValues[2] }.take(80), path)
+            val slug = segments.last()
+            val label = anchor.text().trim().ifBlank {
+                runCatching { java.net.URLDecoder.decode(slug, "UTF-8") }
+                    .getOrDefault(slug).replace('-', ' ')
+            }.take(80)
+            SupjavSource.BrowseOption(kind, slug, label, path)
         }.distinctBy { it.path }
+    }
+    private fun nextDirectoryPage(html: String, current: String, page: Int): String? {
+        val doc = Jsoup.parse(html, current)
+        val currentPath = URI(current).path.trimEnd('/')
+        val parentPath = currentPath.replace(Regex("/page/[0-9]+$"), "")
+        return doc.select("link[rel=next][href], a[rel=next][href], .pagination a[href], a.next[href], a[aria-label=Next][href]")
+            .mapNotNull { a ->
+                val label = a.text().trim().lowercase()
+                val next = a.absUrl("href")
+                val path = runCatching { URI(next).path.trimEnd('/') }.getOrNull()
+                if (site(next) && path != null &&
+                    (path == parentPath || path.startsWith(parentPath + "/page/")) &&
+                    (a.attr("rel") == "next" || label in setOf("next", "›", "»", (page + 1).toString()) ||
+                        a.hasClass("next") || a.attr("aria-label").contains("next", true)) &&
+                    next != current) next else null
+            }.firstOrNull()
     }
     suspend fun browseDirectory(depth: Int): SupjavSource.DirectoryScan = withContext(Dispatchers.IO) {
         require(depth in 1..50)
-        val roots = listOf("/en", "/en/genres", "/en/actresses", "/en/makers")
+        val roots = listOf("/", "/genres", "/en/genres", "/tags", "/en/tags",
+            "/actresses", "/en/actresses", "/makers", "/en/makers",
+            "/series", "/en/series")
         val found = LinkedHashMap<String, SupjavSource.BrowseOption>()
-        var ok = 0
+        val seen = HashSet<String>()
+        var successes = 0
         var failures = 0
+        var hasMore = false
         for (root in roots) {
-            try {
-                val url = BASE + root
-                parseBrowseOptions(fetch(url), url).forEach { found[it.path] = it }
-                ok++
-            } catch (e: Exception) {
-                failures++
-                Diagnostics.log("MISSAV_DIRECTORY_FAILED root=$root reason=${e.javaClass.simpleName}")
+            var current: String? = BASE + root
+            var page = 1
+            var rootSuccess = false
+            while (current != null && page <= depth) {
+                val url = current
+                if (!seen.add(url)) break
+                try {
+                    val html = fetch(url)
+                    rootSuccess = true
+                    parseBrowseOptions(html, url).forEach { found[it.path] = it }
+                    val next = nextDirectoryPage(html, url, page)
+                    if (next != null && page == depth) hasMore = true
+                    current = next
+                    page++
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Diagnostics.log("MISSAV_DIRECTORY_FAILED root=" + root +
+                        " page=" + page + " reason=" + e.javaClass.simpleName)
+                    current = null
+                }
             }
+            if (rootSuccess) successes++ else failures++
         }
-        if (ok == 0) throw IOException("MissAV directory unavailable")
-        SupjavSource.DirectoryScan(found.values.toList(), false, ok, failures)
+        if (successes == 0) throw IOException("MissAV directory unavailable")
+        Diagnostics.log("MISSAV_DIRECTORY entries=" + found.size +
+            " sources=" + successes + " failures=" + failures + " more=" + hasMore)
+        SupjavSource.DirectoryScan(found.values.toList(), hasMore, successes, failures)
     }
     fun parseServers(html: String, detailUrl: String): List<VideoServer> {
         val doc = Jsoup.parse(html, detailUrl)
