@@ -149,9 +149,7 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
                         " resource=" + resource +
                         " host=" + uri.host.orEmpty() +
                         " offsetNonzero=" + (spec.position > 0) +
-                        " lengthKnown=" + (spec.length >= 0) +
-                        " redirected=" + (uri.host != android.net.Uri.parse(
-                            currentVideo?.detailUrl.orEmpty()).host))
+                        " lengthKnown=" + (spec.length >= 0))
                 }
                 val retryable = PlaybackRecoveryPolicy.mayRetry(error.errorCode, status)
                 Diagnostics.log("PLAYER_HTTP_RESULT status=" + status +
