@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.yagay.supjav.SupjavApp
 import com.yagay.supjav.data.MissavSource
+import com.yagay.supjav.data.MissavPageNavigation
 import com.yagay.supjav.data.SupjavSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -31,13 +32,19 @@ internal fun MissavIndexPage(
     var loading by remember(rootPath) { mutableStateOf(false) }
     var error by remember(rootPath) { mutableStateOf<String?>(null) }
     var request by remember(rootPath) { mutableStateOf(MissavSource.BASE + rootPath) }
+    var sorts by remember(rootPath) {
+        mutableStateOf(emptyList<MissavPageNavigation.Choice>())
+    }
+    var currentSort by remember(rootPath) { mutableStateOf("") }
+    var sortMenuOpen by remember { mutableStateOf(false) }
     LaunchedEffect(rootPath, request) {
         loading = true
         error = null
         try {
-            val (entries, nextUrl) = withContext(Dispatchers.IO) {
+            val (entries, nextUrl, pageSorts) = withContext(Dispatchers.IO) {
                 val html = app.source.fetch(request)
-                val expectedGroup = rootPath.substringBefore('?').trimEnd('/').substringAfterLast('/')
+                val expectedGroup = rootPath.substringBefore('?').trimEnd('/')
+                    .split('/').let { if (it.last() == "ranking") "actresses" else it.last() }
                 // Actual result links may use /dmN/en/... even when the index
                 // itself is /en/genres, so compare the taxonomy segment instead
                 // of requiring identical URL prefixes.
@@ -51,15 +58,18 @@ internal fun MissavIndexPage(
                     .firstOrNull { a ->
                         val href = a.absUrl("href")
                         val label = a.text().trim().lowercase()
-                        href.startsWith(MissavSource.BASE + rootPath + "?page=") &&
+                        href.startsWith(MissavSource.BASE + rootPath + "?") &&
+                            Regex("(?:[?&])page=[0-9]+").containsMatchIn(href) &&
                             (a.attr("rel") == "next" || a.hasClass("next") ||
                              label == "next" || label == "›" || label == "»" ||
                              label.toIntOrNull() != null)
                     }?.absUrl("href")
-                parsed to nextLink
+                Triple(parsed, nextLink,
+                    MissavPageNavigation.parseControls(html, request).sorts)
             }
             items = (items + entries).distinctBy { it.path }
             next = nextUrl?.takeUnless { it == request }
+            sorts = pageSorts
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -69,6 +79,31 @@ internal fun MissavIndexPage(
         }
     }
     Column(Modifier.fillMaxSize()) {
+        if (sorts.isNotEmpty()) {
+            Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                OutlinedButton(onClick = { sortMenuOpen = true }) {
+                    Text("排序：" + (sorts.firstOrNull {
+                        it.value == currentSort
+                    }?.label ?: "Default"))
+                }
+                DropdownMenu(expanded = sortMenuOpen,
+                    onDismissRequest = { sortMenuOpen = false }) {
+                    sorts.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = {
+                                sortMenuOpen = false
+                                currentSort = option.value
+                                items = emptyList()
+                                next = null
+                                request = MissavSource.BASE + rootPath +
+                                    if (currentSort.isEmpty()) "" else "?sort=" + currentSort
+                            }
+                        )
+                    }
+                }
+            }
+        }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (error != null) {
             Text("读取目录失败：" + error, Modifier.padding(16.dp))
