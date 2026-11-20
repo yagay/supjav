@@ -23,8 +23,10 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
 class SupjavSource {
+    private val missav = MissavSource()
+    private val missavMode = true // isolated MissAV branch; original implementation remains for reference
     companion object {
-        const val BASE = "https://supjav.com"
+        const val BASE = "https://missav.ws"
         const val UA = "Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
     }
     private val http = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
@@ -38,6 +40,7 @@ class SupjavSource {
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
 
     internal fun pageUrl(kind: FeedKind, value: String, page: Int): String {
+        if (missavMode) return missav.pageUrl(kind, value, page)
         require(page >= 1) { "Invalid page" }
         if (kind in setOf(FeedKind.CATEGORY, FeedKind.ACTOR, FeedKind.MAKER, FeedKind.TAG) &&
             value.startsWith("/")) {
@@ -69,6 +72,7 @@ class SupjavSource {
     }
 
     fun fetch(url: String, referer: String = BASE + "/"): String {
+        if (missavMode) return missav.fetch(url, referer)
         require(isSiteUrl(url)) { "Only known Supjav HTTPS site routes are allowed" }
         var target = url
         repeat(5) { hop ->
@@ -126,6 +130,7 @@ class SupjavSource {
         kind: FeedKind, value: String = "", page: Int = 1,
         nextUrl: String? = null
     ): ListingPage = withContext(Dispatchers.IO) {
+        if (missavMode) return@withContext missav.listPage(kind, value, page, nextUrl)
         val url = nextUrl?.takeIf { isSiteUrl(it) } ?: pageUrl(kind, value, page)
         val html = fetch(url)
         // A 200 response can still contain a browser verification page.
@@ -161,6 +166,7 @@ class SupjavSource {
      * the feed has reached its last page.
      */
     fun parseListingPage(html: String, base: String = BASE, page: Int = 1): ListingPage {
+        if (missavMode) return missav.parseListingPage(html, base, page)
         val doc = Jsoup.parse(html, base)
         val pager = doc.select(
             ".pagination, .wp-pagenavi, .nav-links, nav.navigation.pagination, " +
@@ -196,6 +202,7 @@ class SupjavSource {
     }
 
     fun parseList(html: String, base: String = BASE): List<VideoItem> {
+        if (missavMode) return missav.parseList(html, base)
         val doc = Jsoup.parse(html, base)
         // Some pages use one <article> to wrap an entire grid, while others
         // render every item as .post or a linked thumbnail. Enumerate real
@@ -238,6 +245,7 @@ class SupjavSource {
     }
 
     suspend fun detail(video: VideoItem): VideoDetail = withContext(Dispatchers.IO) {
+        if (missavMode) return@withContext missav.detail(video)
         val html = fetch(video.detailUrl)
         val doc = Jsoup.parse(html, video.detailUrl)
         val title = doc.selectFirst(".post-title h1, h1.post-title, .entry-title, h1")?.text()
@@ -357,6 +365,7 @@ class SupjavSource {
      * resolver / WebView, so all playback paths receive the same line list.
      */
     fun parseServers(html: String, detailUrl: String): List<VideoServer> {
+        if (missavMode) return missav.parseServers(html, detailUrl)
         val doc = Jsoup.parse(html, detailUrl)
         // Open-source SUPJAV extractors also observe .btnst a[data-link],
         // which the older app parser did not include.
@@ -460,6 +469,7 @@ class SupjavSource {
      */
     suspend fun browseDirectory(maxPages: Int = 2): DirectoryScan =
         withContext(Dispatchers.IO) {
+            if (missavMode) return@withContext missav.browseDirectory(maxPages)
             require(maxPages in 1..50)
             val roots = listOf(
                 "/", "/category/", "/tag/", "/cast/", "/maker/",
@@ -529,6 +539,7 @@ class SupjavSource {
     suspend fun browseOptions(): List<BrowseOption> = browseDirectory().options
 
     fun parseBrowseOptions(html: String, base: String = BASE): List<BrowseOption> {
+        if (missavMode) return missav.parseBrowseOptions(html, base)
         val doc = Jsoup.parse(html, base)
         // Directory items may be in grids, list bodies or pagination pages,
         // not necessarily inside nav/header/sidebars.
