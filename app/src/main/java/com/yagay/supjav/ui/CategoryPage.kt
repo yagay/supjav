@@ -52,6 +52,7 @@ fun CategoryPage(
     var directoryHasMore by remember { mutableStateOf(false) }
     var directorySources by remember { mutableIntStateOf(0) }
     var chosenKind by rememberSaveable { mutableStateOf(FeedKind.CATEGORY) }
+    var selectedMenu by rememberSaveable { mutableStateOf("Watch JAV") }
     var initialFilter by remember(chosenKind) { mutableStateOf("全部") }
     var selectedKind by remember { mutableStateOf<FeedKind?>(null) }
     var selectedPath by rememberSaveable { mutableStateOf("") }
@@ -61,6 +62,7 @@ fun CategoryPage(
     LaunchedEffect(initialKind, initialPath) {
         if (initialKind != null && initialPath.isBlank()) {
             chosenKind = initialKind
+            selectedMenu = ""
             selectedKind = null
             selectedPath = ""
             selectedTitle = ""
@@ -69,6 +71,7 @@ fun CategoryPage(
             selectedPath = initialPath
             selectedTitle = initialPath.substringAfterLast('/').replace('-', ' ')
             chosenKind = initialKind
+            selectedMenu = ""
             app.categoryStore.markVisited(initialPath)
             visited = app.categoryStore.recent()
         } else if (initialKind == null) {
@@ -146,6 +149,23 @@ fun CategoryPage(
     }
 
     Column(Modifier.fillMaxSize()) {
+        // First-party menu headings are not category URLs (their href is '#').
+        // Expose the four group headings as native chips and their children as
+        // ordinary category cards with the actual observed website routes.
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("Watch JAV", "Amateur", "Uncensored", "Asia AV").forEach { group ->
+                val count = directory.count { it.value == "menu:" + group }
+                FilterChip(
+                    selected = selectedMenu == group,
+                    onClick = { selectedMenu = group; initialFilter = "全部" },
+                    label = { Text("$group $count") }
+                )
+            }
+        }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 4.dp),
@@ -154,8 +174,8 @@ fun CategoryPage(
             listOf(FeedKind.CATEGORY, FeedKind.TAG, FeedKind.ACTOR, FeedKind.MAKER)
                 .forEach { kind ->
                     FilterChip(
-                        selected = chosenKind == kind,
-                        onClick = { chosenKind = kind },
+                        selected = chosenKind == kind && selectedMenu.isEmpty(),
+                        onClick = { chosenKind = kind; selectedMenu = ""; initialFilter = "全部" },
                         label = { Text(
                             (when (kind) {
                                 FeedKind.CATEGORY -> "分类"
@@ -191,9 +211,19 @@ fun CategoryPage(
                 }
             }
         }
-        val results = remember(directory, chosenKind, directoryFilter) {
-            app.catalog.directoryMatches(directory, chosenKind, directoryFilter)
-                .sortedWith(compareBy({ it.label.lowercase() }, { it.path }))
+        val results = remember(directory, chosenKind, selectedMenu, directoryFilter) {
+            if (selectedMenu.isNotEmpty()) {
+                directory.filter { it.value == "menu:" + selectedMenu }
+                    .filter { directoryFilter.isBlank() ||
+                        it.label.contains(directoryFilter, ignoreCase = true) ||
+                        it.path.contains(directoryFilter, ignoreCase = true) }
+                    .distinctBy { it.path }
+            } else {
+                app.catalog.directoryMatches(directory.filterNot {
+                    it.value.startsWith("menu:")
+                }, chosenKind, directoryFilter)
+                    .sortedWith(compareBy({ it.label.lowercase() }, { it.path }))
+            }
         }
         fun initialOf(label: String): String {
             val first = label.firstOrNull()?.uppercaseChar() ?: return "#"
@@ -211,7 +241,7 @@ fun CategoryPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             SupjavSectionTitle(
-                chosenKind.title,
+                if (selectedMenu.isNotEmpty()) selectedMenu else chosenKind.title,
                 "共 ${results.size} 项 · 已同步 ${directorySources} 个目录来源"
             )
             Spacer(Modifier.weight(1f))
