@@ -134,7 +134,8 @@ class SelectedMediaSession(
     ): PlaybackSource? {
         val documentOrigin = MediaSourceDetector.origin(documentUrl) ?: return null
         if (documentOrigin != MediaSourceDetector.origin(reportedOrigin) ||
-            documentOrigin !in trustedOrigins || documentOrigin == siteOrigin) return null
+            documentOrigin !in trustedOrigins ||
+            (documentOrigin == siteOrigin && siteOrigin !in setOf("https://missav.ws", "https://www.missav.ws"))) return null
         return MediaSourceDetector.fromMediaUrl(mediaUrl, documentUrl)
     }
 
@@ -142,7 +143,8 @@ class SelectedMediaSession(
     fun fromNetworkRequest(mediaUrl: String, requestReferer: String?): PlaybackSource? {
         val ref = requestReferer ?: return null
         val refererOrigin = MediaSourceDetector.origin(ref)
-        if (refererOrigin !in trustedOrigins || refererOrigin == siteOrigin) return null
+        if (refererOrigin !in trustedOrigins ||
+            (refererOrigin == siteOrigin && siteOrigin !in setOf("https://missav.ws", "https://www.missav.ws"))) return null
         return MediaSourceDetector.fromMediaUrl(mediaUrl, ref)
     }
 }
