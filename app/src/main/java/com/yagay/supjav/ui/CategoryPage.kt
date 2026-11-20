@@ -300,11 +300,30 @@ fun CategoryPage(
             items(visibleResults, key = { it.path }) { option ->
                 OutlinedCard(
                     onClick = {
-                        selectedKind = option.kind
-                        selectedPath = option.path
-                        selectedTitle = option.label
-                        app.categoryStore.markVisited(option.path)
-                        visited = app.categoryStore.recent()
+                        // Top navigation contains directory index links too.
+                        // Open the matching native index rather than treating
+                        // /en/genres or /en/makers as a video listing.
+                        val indexKind = if (option.value.startsWith("menu:")) {
+                            when (option.label.lowercase()) {
+                                "genre" -> FeedKind.CATEGORY
+                                "maker" -> FeedKind.MAKER
+                                "actress list" -> FeedKind.ACTOR
+                                else -> null
+                            }
+                        } else null
+                        if (indexKind != null) {
+                            selectedMenu = ""
+                            chosenKind = indexKind
+                            initialFilter = "全部"
+                            selectedKind = null
+                            selectedPath = ""
+                        } else {
+                            selectedKind = option.kind
+                            selectedPath = option.path
+                            selectedTitle = option.label
+                            app.categoryStore.markVisited(option.path)
+                            visited = app.categoryStore.recent()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
