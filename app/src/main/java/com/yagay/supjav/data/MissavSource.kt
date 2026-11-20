@@ -46,6 +46,39 @@ internal class MissavSource {
     private fun validTaxonomyPath(path: String): Boolean =
         Regex("^/(?:dm[0-9]+/)?(?:(?:en|ja|cn|ko|zh|tw)/)?(?:genres|genre|tags|tag|actresses|actress|actors|actor|makers|maker|series)/[A-Za-z0-9_%.-]+$").matches(path)
 
+    private fun validMenuPath(path: String): Boolean =
+        Regex("^/(?:dm[0-9]+/)?(?:(?:en|ja|cn|ko|zh|tw)/)?[A-Za-z0-9_-]{2,100}/?$").matches(path)
+
+    /**
+     * MissAV top navigation uses # for group headings. Each group's children
+     * have real links and are the actual navigable categories.
+     */
+    fun parseMenuOptions(html: String, base: String = BASE): List<SupjavSource.BrowseOption> {
+        val groups = setOf("Watch JAV", "Amateur", "Uncensored", "Asia AV")
+        val doc = Jsoup.parse(html, base)
+        val result = LinkedHashMap<String, SupjavSource.BrowseOption>()
+        var group: String? = null
+        for (anchor in doc.select("a[href]")) {
+            val label = anchor.text().trim().replace(Regex("\\s+"), " ").take(80)
+            if (label in groups && anchor.attr("href").trim().endsWith("#")) {
+                group = label
+                continue
+            }
+            if (group == null) continue
+            if (label in setOf("My collection", "More sites", "Menu")) break
+            val link = anchor.absUrl("href")
+            if (!site(link) || label.isBlank()) continue
+            val uri = URI(link)
+            val path = uri.path.trimEnd('/')
+            if (!validMenuPath(path) && !validTaxonomyPath(path)) continue
+            // Keep verified website routes: do not construct /dmN prefixes.
+            val option = SupjavSource.BrowseOption(FeedKind.CATEGORY,
+                "menu:" + group, label, path)
+            result.putIfAbsent(group + "|" + path, option)
+        }
+        return result.values.toList()
+    }
+
     fun pageUrl(kind: FeedKind, value: String, page: Int): String {
         require(page in 1..10000)
         val start = when(kind) {
@@ -56,7 +89,7 @@ internal class MissavSource {
             FeedKind.SEARCH -> "$BASE/en/search/${encode(value)}"
             else -> if (value.startsWith("/")) {
                 val path = value.trimEnd('/')
-                require(validTaxonomyPath(path))
+                require(validTaxonomyPath(path) || validMenuPath(path))
                 BASE + path
             } else "$BASE/en/${route(kind)}/${slug(value)}"
         }
@@ -182,6 +215,7 @@ internal class MissavSource {
             "/actresses", "/en/actresses", "/makers", "/en/makers",
             "/series", "/en/series")
         val found = LinkedHashMap<String, SupjavSource.BrowseOption>()
+        val menus = LinkedHashMap<String, SupjavSource.BrowseOption>()
         val seen = HashSet<String>()
         var successes = 0
         var failures = 0
@@ -196,6 +230,9 @@ internal class MissavSource {
                 try {
                     val html = fetch(url)
                     rootSuccess = true
+                    if (root == "/") parseMenuOptions(html, url).forEach {
+                        menus[it.value + "|" + it.path] = it
+                    }
                     parseBrowseOptions(html, url).forEach { found[it.path] = it }
                     val next = nextDirectoryPage(html, url, page)
                     if (next != null && page == depth) hasMore = true
@@ -214,7 +251,7 @@ internal class MissavSource {
         if (successes == 0) throw IOException("MissAV directory unavailable")
         Diagnostics.log("MISSAV_DIRECTORY entries=" + found.size +
             " sources=" + successes + " failures=" + failures + " more=" + hasMore)
-        SupjavSource.DirectoryScan(found.values.toList(), hasMore, successes, failures)
+        SupjavSource.DirectoryScan(menus.values.toList() + found.values.toList(), hasMore, successes, failures)
     }
     fun parseServers(html: String, detailUrl: String): List<VideoServer> {
         val doc = Jsoup.parse(html, detailUrl)
