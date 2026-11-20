@@ -126,9 +126,33 @@ class PlaybackEngine(private val context: Context, private val library: LibraryS
             override fun onPlayerError(error: PlaybackException) {
                 Diagnostics.log("PLAYER_ERROR " + error.errorCodeName + " " +
                     error.message.orEmpty().take(140))
-                val status = generateSequence(error as Throwable?) { it.cause }
+                val httpError = generateSequence(error as Throwable?) { it.cause }
                     .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
-                    .firstOrNull()?.responseCode
+                    .firstOrNull()
+                val status = httpError?.responseCode
+                if (httpError != null) {
+                    // DataSpec identifies which request failed, not necessarily
+                    // the manifest. Never log signed URLs or sensitive headers.
+                    val spec = httpError.dataSpec
+                    val uri = spec.uri
+                    val path = uri.path.orEmpty().lowercase()
+                    val resource = when {
+                        path.endsWith(".m3u8") || path.endsWith(".m3u") -> "playlist"
+                        path.endsWith(".key") || path.contains("/key/") -> "key"
+                        path.endsWith(".ts") -> "transport-segment"
+                        path.endsWith(".m4s") -> "fragmented-segment"
+                        path.endsWith(".mp4") -> "mp4-or-init"
+                        else -> "unknown"
+                    }
+                    Diagnostics.log("PLAYER_HTTP_DENIED" +
+                        " status=" + status +
+                        " resource=" + resource +
+                        " host=" + uri.host.orEmpty() +
+                        " offsetNonzero=" + (spec.position > 0) +
+                        " lengthKnown=" + (spec.length >= 0) +
+                        " redirected=" + (uri.host != android.net.Uri.parse(
+                            currentVideo?.detailUrl.orEmpty()).host))
+                }
                 val retryable = PlaybackRecoveryPolicy.mayRetry(error.errorCode, status)
                 Diagnostics.log("PLAYER_HTTP_RESULT status=" + status +
                     " retryable=" + retryable +
