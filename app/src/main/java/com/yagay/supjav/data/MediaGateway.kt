@@ -165,6 +165,59 @@ internal class OkHttpMediaGateway : MediaGateway {
         return exchange(url, referer, "POST", json, maxBytes = 65_536).first
     }
 
+    /**
+     * A 200/206 HLS manifest is not proof the actual segment is accessible.
+     * Inspect at most one variant playlist and one segment, using the same
+     * request profile selected for the manifest. No retry storm or URL logging.
+     */
+    private fun hlsMediaReachable(
+        manifest: String, manifestUrl: String, referer: String,
+        includeOrigin: Boolean
+    ): MediaProbe? {
+        var content = manifest
+        var base = manifestUrl
+        repeat(2) { depth ->
+            val lines = content.lineSequence().map { it.trim() }.toList()
+            val path = lines.firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
+                ?: return null // A minimal/incomplete manifest cannot be assessed.
+            val nextUrl = runCatching { URI(base).resolve(path).toString() }.getOrNull()
+                ?: return MediaProbe(false, null, null, "invalid-hls-child", includeOrigin)
+            if (MediaSourceDetector.origin(nextUrl) == null) {
+                return MediaProbe(false, null, null, "unsafe-hls-child", includeOrigin)
+            }
+            val variant = lines.any { it.startsWith("#EXT-X-STREAM-INF", true) } &&
+                depth == 0
+            val (page, bytes, destination) = try {
+                exchange(nextUrl, referer, "HLS_CHILD",
+                    maxBytes = if (variant) 8192 else 1024,
+                    range = !variant, includeOrigin = includeOrigin)
+            } catch (e: Exception) {
+                Diagnostics.log("MEDIA_HLS_CHILD_ERROR type=" + e.javaClass.simpleName)
+                return MediaProbe(false, null, null, "hls-child-error", includeOrigin)
+            }
+            Diagnostics.log("MEDIA_HLS_CHILD_CHECK depth=" + depth +
+                " kind=" + (if (variant) "variant" else "segment") +
+                " status=" + page.status + " host=" + URI(destination).host)
+            if (page.status !in listOf(200, 206)) {
+                return MediaProbe(false, page.status, null,
+                    "hls-child-http", includeOrigin)
+            }
+            if (bytes.isEmpty() || page.type.contains("text/html") ||
+                page.type.contains("application/json")) {
+                return MediaProbe(false, page.status, null,
+                    "hls-child-nonmedia", includeOrigin)
+            }
+            if (!variant) return null
+            content = bytes.toString(Charsets.UTF_8).trimStart('\uFEFF', ' ', '\r', '\n')
+            if (!content.startsWith("#EXTM3U")) {
+                return MediaProbe(false, page.status, null,
+                    "invalid-hls-variant", includeOrigin)
+            }
+            base = destination
+        }
+        return null
+    }
+
     override fun probe(url: String, referer: String, hls: Boolean): MediaProbe {
         fun check(range: Boolean, includeOrigin: Boolean, profile: String): MediaProbe {
             return try {
@@ -186,8 +239,13 @@ internal class OkHttpMediaGateway : MediaGateway {
                     val text = bytes.toString(Charsets.UTF_8)
                         .trimStart('\uFEFF', ' ', '\r', '\n')
                     val valid = text.startsWith("#EXTM3U")
-                    MediaProbe(valid, status, finalUrl.takeIf { valid },
-                        if (valid) "hls-ok" else "invalid-hls", includeOrigin)
+                    val childResult = if (valid) hlsMediaReachable(
+                        text, finalUrl, referer, includeOrigin
+                    ) else null
+                    if (childResult != null) childResult else MediaProbe(
+                        valid, status, finalUrl.takeIf { valid },
+                        if (valid) "hls-ok" else "invalid-hls", includeOrigin
+                    )
                 } else {
                     val mp4Magic = bytes.size >= 8 &&
                         bytes.copyOfRange(4, 8).contentEquals("ftyp".toByteArray())
