@@ -516,7 +516,7 @@ fun SettingsScreen(
                             Text(logError.orEmpty(), color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(horizontal = 6.dp))
                         }
-                        Text("Supjav Native · Android / Compose / Media3",
+                        Text("MissAV Native · Android / Compose / Media3",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("不会绕过网站的验证或访问限制。",
