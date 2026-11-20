@@ -37,9 +37,14 @@ internal fun MissavIndexPage(
         try {
             val (entries, nextUrl) = withContext(Dispatchers.IO) {
                 val html = app.source.fetch(request)
+                val expectedGroup = rootPath.substringBefore('?').trimEnd('/').substringAfterLast('/')
+                // Actual result links may use /dmN/en/... even when the index
+                // itself is /en/genres, so compare the taxonomy segment instead
+                // of requiring identical URL prefixes.
                 val parsed = app.source.parseBrowseOptions(html, request)
                     .filter { candidate ->
-                        candidate.path.startsWith(rootPath.trimEnd('/') + "/")
+                        candidate.path.trimEnd('/').split('/').dropLast(1).lastOrNull() ==
+                            expectedGroup
                     }
                 val doc = Jsoup.parse(html, request)
                 val nextLink = doc.select("a[rel=next][href], a.next[href], .pagination a[href]")
